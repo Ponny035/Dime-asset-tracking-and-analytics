@@ -1,76 +1,150 @@
 import os
-import imaplib
 import datetime
-
 import email
+import email.message
 from email.header import decode_header
+import imaplib
 
-from dotenv import load_dotenv
 
-# load the variables from .env
-load_dotenv()
-username = os.getenv('USERNAME')
-app_password = os.getenv('APP_PASSWORD')
+def connect_to_server(username: str, app_password: str) -> imaplib.IMAP4_SSL:
+    """
+    Connects to the IMAP server.
 
-def read_emails(start_date, end_date):
-    # connect to the IMAP server
-    mail = imaplib.IMAP4_SSL('imap.gmail.com')
-    mail.login(username, app_password)
+    Args:
+        username (str): The email account username.
+        app_password (str): The email account app password.
 
-    # select the mailbox you want to read emails from (in this case, the inbox)
-    mail.select('inbox')
+    Returns:
+        imaplib.IMAP4_SSL: An IMAP4_SSL object connected to the email server.
+    """
+    try:
+        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail.login(username, app_password)
+    except Exception as e:
+        print(f"Error connecting to the mail server: {e}")
+        return None
+    return mail
 
-    # search for emails that contain the word "Dime" and were sent only in the specified date range
+
+def search_emails(mail: imaplib.IMAP4_SSL, start_date: datetime.datetime, end_date: datetime.datetime,
+                  subject_keyword: str, from_email: str) -> list:
+    """
+    Searches for emails that match the given criteria.
+
+    Args:
+        mail (imaplib.IMAP4_SSL): An IMAP4_SSL object connected to the email server.
+        start_date (datetime.datetime): The start date for the email search.
+        end_date (datetime.datetime): The end date for the email search.
+        subject_keyword (str): The subject keyword to search for.
+        from_email (str): The email address to search for in the "from" field.
+
+    Returns:
+        list: A list of email IDs that match the given criteria.
+    """
     since_date = start_date.strftime('%d-%b-%Y')
-    before_date = end_date.strftime('%d-%b-%Y')
-    search_criteria = f'SINCE "{since_date}" BEFORE "{before_date}" SUBJECT "Confirmation Note" FROM "no-reply@dime.co.th"'
-    status, data = mail.search(None, search_criteria)
+    before_date = (end_date + datetime.timedelta(days=1)).strftime('%d-%b-%Y')
+    search_criteria = f'SINCE "{since_date}" BEFORE "{before_date}" SUBJECT "{subject_keyword}" FROM "{from_email}"'
+    try:
+        status, data = mail.search(None, search_criteria)
+    except Exception as e:
+        print(f"Error searching emails: {e}")
+        return []
+    return data[0].split()
 
-    # loop through all the matching emails and process any PDF attachments found
-    for num in data[0].split():
-        status, email_data = mail.fetch(num, '(RFC822)')
-        email_message = email.message_from_bytes(email_data[0][1])
 
-        # decode the subject and print it along with the sender
-        subject = decode_header(email_message['Subject'])[0][0]
-        if isinstance(subject, bytes):
-            subject = subject.decode()
-        print('Subject:', subject)
-        print('From:', email_message['From'])
+def decode_email_subject(email_message: email.message.Message) -> str:
+    """
+    Decodes the subject of an email.
 
-        # Loop over each part of the email message
-        for part in email_message.walk():
-            # If the part is an attachment
-            if part.get_content_disposition() == 'attachment':
-                # Check if the attachment has a file name
-                if part.get_filename():
-                    filename = part.get_filename()
-                    filename = filename.split("_")[4]
-                    date = filename[:8]
-                    year = date[4:]
-                    month = date[2:4]
-                    day = date[:2]
-                    filename = year + "_" + month + "_" + day + "_" + filename[8:].split(".")[0] + "_confirmationNote.pdf"
-                else:
-                    filename = 'attachment.pdf'
+    Args:
+        email_message (email.message.Message): The email message object.
 
-                # Construct the file path
-                file_path = os.path.join('data', filename)
+    Returns:
+        str: The decoded email subject as a string.
+    """
+    print(type(email_message))
+    subject, encoding = decode_header(email_message['Subject'])[0]
+    if encoding:
+        subject = subject.decode(encoding)
+    return subject
 
-                # Save the attachment
-                with open(file_path, 'wb') as f:
-                    f.write(part.get_payload(decode=True))
-                print('Downloaded attachment:', file_path)
 
-    # close the mailbox and logout from the server
-    mail.close()
-    mail.logout()
+def extract_attachment_info(part: email.message.Message) -> str:
+    """
+    Extracts the filename and date from an email attachment.
 
-# calculate the dates for the beginning and end of the last month
-today = datetime.date.today()
-last_month = (today.replace(day=1) - datetime.timedelta(days=1)).replace(day=1) 
-start_date = last_month.replace(day=1)
-end_date = last_month.replace(day=last_month.day)
+    Args:
+        part (email.message.Message): The email message object representing the attachment.
 
-# call the read_emails function with the start and end dates
-read_emails(start_date, end_date)
+    Returns:
+        str: The extracted filename.
+    """
+    if part.get_filename():
+        filename_parts = part.get_filename().split("_")
+        date_str = filename_parts[4][:8]
+        date = datetime.datetime.strptime(date_str, '%d%m%Y').date()
+        filename = f"{str(date)}_{filename_parts[4][8:-4]}_confirmationNote.pdf"
+    else:
+        filename = 'attachment.pdf'
+    return filename
+
+
+def save_attachment(part: email.message.Message, filename: str) -> None:
+    """
+    Saves an email attachment to a file.
+
+    Args:
+        part (email.message.Message): The email message object representing the attachment.
+        filename (str): The name of the file to save the attachment to.
+
+    Returns:
+        None
+    """
+    file_path = os.path.join('data', filename)
+    with open(file_path, 'wb') as f:
+        f.write(part.get_payload(decode=True))
+    print(f"Downloaded attachment: {file_path}")
+
+
+def read_emails(start_date: datetime.datetime, end_date: datetime.datetime, username: str,
+                app_password: str, from_email: str, subject_keyword: str) -> list:
+    """
+    Searches for and processes emails that match the given criteria.
+
+    Args:
+        start_date (datetime.datetime): The start date for the email search.
+        end_date (datetime.datetime): The end date for the email search.
+        username (str): The email account username.
+        app_password (str): The email account app password.
+        from_email (str): The email address to search for in the "from" field.
+        subject_keyword (str): The subject keyword to search for.
+
+    Returns:
+        list: A list of filenames of the downloaded attachments.
+    """
+    file_list = []
+    try:
+        with connect_to_server(username, app_password) as mail:
+            mail.select('inbox')
+            matching_emails = search_emails(mail, start_date, end_date, subject_keyword, from_email)
+
+            for num in matching_emails:
+                try:
+                    status, email_data = mail.fetch(num, '(RFC822)')
+                    email_message = email.message_from_bytes(email_data[0][1])
+                    subject = decode_email_subject(email_message)
+                    print(f"Subject: {subject}")
+                    print(f"From: {email_message['From']}")
+
+                    for part in email_message.walk():
+                        if part.get_content_disposition() == 'attachment':
+                            filename = extract_attachment_info(part)
+                            save_attachment(part, filename)
+                            file_list.append(filename)
+                except Exception as e:
+                    print(f"Error processing email: {e}")
+
+    except Exception as e:
+        print(f"Error connecting to the mail server: {e}")
+
+    return file_list

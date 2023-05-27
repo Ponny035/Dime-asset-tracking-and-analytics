@@ -140,7 +140,7 @@ def read_emails(start_date: datetime.datetime, end_date: datetime.datetime, user
                         if part.get_content_disposition() == 'attachment':
                             filename = extract_attachment_info(part)
                             save_attachment(part, filename)
-                            file_list.append(filename)
+                            file_list.append("data/" + filename)
                 except Exception as e:
                     print(f"Error processing email: {e}")
 

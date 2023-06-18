@@ -62,7 +62,6 @@ def decode_email_subject(email_message: email.message.Message) -> str:
     Returns:
         str: The decoded email subject as a string.
     """
-    print(type(email_message))
     subject, encoding = decode_header(email_message['Subject'])[0]
     if encoding:
         subject = subject.decode(encoding)

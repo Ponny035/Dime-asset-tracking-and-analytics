@@ -50,7 +50,7 @@ def format_transaction(price: float, commission: float, tax: float, amount: floa
     """
     stock_info = get_stock_basic_info(stock_name)
     has_dividend = stock_info['Dividend'] != '-'
-    actual_amount = round(amount - (commission + tax), 2)
+    actual_amount = round(amount + (commission + tax), 2)
     transaction = [
         date, portfolio, transaction_type, stock_name, stock_info['Sector'], stock_info['Industry'], has_dividend,
         price, commission, tax, amount, actual_amount, share, status

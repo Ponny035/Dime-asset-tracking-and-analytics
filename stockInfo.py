@@ -54,6 +54,9 @@ def format_transaction(price: float, commission: float, tax: float, amount: floa
         total_amount = round(amount + (commission + tax), 2)
     else:
         total_amount = round(amount - (commission + tax), 2) * -1
+        amount = -amount
+        share = -share
+
     transaction = [
         date, portfolio, transaction_type, stock_name, stock_info['Sector'], stock_info['Industry'], has_dividend,
         price, commission, tax, amount, total_amount, share, status

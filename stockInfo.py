@@ -21,10 +21,9 @@ def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
         "Sector": str(stock_fundament["Sector"]),
         "Industry": str(stock_fundament["Industry"]),
         "Country": str(stock_fundament["Country"]),
-        "Dividend": str(stock_fundament["Dividend"])
+        "Dividend": str(stock_fundament["Dividend TTM"])
     }
     return stock_basic_info
-
 
 def format_transaction(price: float, commission: float, tax: float, amount: float, share: float,
                        stock_name: str = "AAPL", date: datetime = datetime.today(), portfolio: str = "Dime",

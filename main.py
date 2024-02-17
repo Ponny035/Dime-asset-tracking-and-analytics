@@ -59,7 +59,7 @@ def process_investment_transactions(start_date=None, end_date=None):
             commission = transaction[4]
             tax = transaction[5]
             amount = transaction[6]
-            formated_transaction = format_transaction(price, commission, tax, amount, share, stock_name, date, "Dime",
+            formated_transaction = format_transaction(price, commission, tax, amount, float(share), stock_name, date, "Dime",
                                                       transaction_type, "Done")
             print(formated_transaction)
             creds = authenticate()

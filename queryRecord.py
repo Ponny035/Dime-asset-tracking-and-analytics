@@ -123,9 +123,13 @@ def read_emails(start_date: datetime.datetime, end_date: datetime.datetime, user
     """
     file_list = []
     try:
+        print("Connecting to mail server.")
         with connect_to_server(username, app_password) as mail:
+            print("Mail server connected.")
             mail.select('inbox')
+            print("Searching E-mail.")
             matching_emails = search_emails(mail, start_date, end_date, subject_keyword, from_email)
+            print("Found", str(len(matching_emails)), "E-mail.")
 
             for num in matching_emails:
                 try:

@@ -1,6 +1,6 @@
-from finvizfinance.quote import finvizfinance
-from datetime import datetime
 from typing import Literal
+from datetime import datetime
+from finvizfinance.quote import finvizfinance
 
 
 def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
@@ -25,10 +25,11 @@ def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     }
     return stock_basic_info
 
+
 def format_transaction(price: float, commission: float, tax: float, amount: float, share: float,
                        stock_name: str = "AAPL", date: datetime = datetime.today(), portfolio: str = "Dime",
                        transaction_type: Literal['BUY', 'SEL', 'DIV'] = 'BUY',
-                       status: str = "Done") -> list:
+                       status: str = "Done", note: str = "-") -> list:
     """
     Formats a transaction into a list with detailed information.
 
@@ -43,6 +44,7 @@ def format_transaction(price: float, commission: float, tax: float, amount: floa
         portfolio (str): The name of the portfolio. Default is "Dime".
         transaction_type (Literal['BUY', 'SEL', 'DIV']): The type of the transaction. Default is 'BUY'.
         status (str): The status of the transaction. Default is "Done".
+        note (str): The note of the transaction. Default is "-".
 
     Returns:
         list: A list representing the formatted transaction with detailed information.
@@ -58,6 +60,6 @@ def format_transaction(price: float, commission: float, tax: float, amount: floa
 
     transaction = [
         date, portfolio, transaction_type, stock_name, stock_info['Sector'], stock_info['Industry'], has_dividend,
-        price, commission, tax, amount, total_amount, share, status
+        price, commission, tax, amount, total_amount, share, status, note
     ]
     return transaction

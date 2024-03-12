@@ -108,8 +108,8 @@ def save_attachment(part: email.message.Message, filename: str) -> None:
     print(f"Downloaded attachment: {file_path}")
 
 
-def read_emails(start_date: datetime.datetime, end_date: datetime.datetime, username: str,
-                app_password: str, from_email: str, subject_keyword: str) -> list:
+def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, username: str,
+                 app_password: str, from_email: str, subject_keyword: str) -> list:
     """
     Searches for and processes emails that match the given criteria.
 
@@ -132,7 +132,7 @@ def read_emails(start_date: datetime.datetime, end_date: datetime.datetime, user
             mail.select('inbox')
             print("Searching E-mail.")
             matching_emails = search_emails(mail, start_date, end_date, subject_keyword, from_email)
-            
+
             if len(matching_emails) >= 1:
                 print("Found", str(len(matching_emails)), "E-mails.")
             elif len(matching_emails) == 1:

@@ -35,3 +35,4 @@ def import_invest_log_to_google_sheet(spreadsheet_id: str, range_name: str,
     except HttpError as error:
         print(f"An error occurred: {error}")
         return error
+

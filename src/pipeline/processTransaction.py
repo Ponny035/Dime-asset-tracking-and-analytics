@@ -3,10 +3,10 @@ import datetime
 
 from dotenv import load_dotenv
 
-from src.module.queryRecord import read_emails
+from src.module.queryEmailRecord import query_emails
 from src.module.PDFProcessing import process_pdf
 from src.module.stockInfo import format_transaction
-from src.module.importToGoogleSheet import import_invest_log_to_google_sheet
+from src.module.importDataToGoogleSheet import import_invest_log_to_google_sheet
 
 
 def process_investment_transactions(start_date=None, end_date=None):
@@ -27,8 +27,8 @@ def process_investment_transactions(start_date=None, end_date=None):
     username = os.getenv('USERNAME')
     app_password = os.getenv('APP_PASSWORD')
     pdf_password = os.getenv('PDF_PASSWORD')
-    spredsheet_id = os.getenv('SPREADSHEET_ID')
-    range_name = os.getenv('RANGE_NAME')
+    spreadsheet_id = os.getenv('SPREADSHEET_ID')
+    range_name = os.getenv('INVEST_LOG_RANGE_NAME')
     from_email = "no-reply@dime.co.th"
     subject_keyword = "Confirmation Note"
 
@@ -41,7 +41,7 @@ def process_investment_transactions(start_date=None, end_date=None):
     print(start_date, end_date)
 
     # call the read_emails function with the start and end dates
-    pdf_path_list = read_emails(start_date, end_date, username, app_password, from_email, subject_keyword)
+    pdf_path_list = query_emails(start_date, end_date, username, app_password, from_email, subject_keyword)
     print(pdf_path_list)
 
     date_and_transactions = []
@@ -62,6 +62,6 @@ def process_investment_transactions(start_date=None, end_date=None):
             formated_transaction = format_transaction(price, commission, tax, amount, float(share),
                                                       stock_name, date, "Dime", transaction_type, "Done", "-")
             print(formated_transaction)
-            import_invest_log_to_google_sheet(spredsheet_id, range_name, "USER_ENTERED", [formated_transaction])
+            import_invest_log_to_google_sheet(spreadsheet_id, range_name, "USER_ENTERED", [formated_transaction])
 
     return None

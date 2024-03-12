@@ -8,6 +8,8 @@ from src.module.PDFProcessing import process_pdf
 from src.module.stockInfo import format_transaction
 from src.module.importDataToGoogleSheet import import_invest_log_to_google_sheet
 
+from src.module.assetTracking import query_investment_log, process_investment_log
+
 
 def process_investment_transactions(start_date=None, end_date=None):
     """
@@ -65,3 +67,22 @@ def process_investment_transactions(start_date=None, end_date=None):
             import_invest_log_to_google_sheet(spreadsheet_id, range_name, "USER_ENTERED", [formated_transaction])
 
     return None
+
+
+def test(start_date, end_date):
+    # load the variables from .env
+    load_dotenv()
+    username = os.getenv('USERNAME')
+    app_password = os.getenv('APP_PASSWORD')
+    pdf_password = os.getenv('PDF_PASSWORD')
+    spreadsheet_id = os.getenv('SPREADSHEET_ID')
+    range_name = os.getenv('INVEST_LOG_RANGE_NAME')
+    asset_track_range_name = os.getenv('ASSET_TRACKING_RANGE_NAME')
+    from_email = "no-reply@dime.co.th"
+    subject_keyword = "Confirmation Note"
+
+    investment_log = query_investment_log(spreadsheet_id=spreadsheet_id, range_name=range_name, start_date=start_date,
+                                          end_date=end_date)
+
+    process_investment_log(investment_log, spreadsheet_id, asset_track_range_name, start_date=start_date,
+                           end_date=end_date)

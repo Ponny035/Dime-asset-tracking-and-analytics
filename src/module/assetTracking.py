@@ -110,12 +110,12 @@ def process_investment_log(investment_log, spreadsheet_id: str, asset_log_range_
                                      suffixes=('_asset', '_filtered'))
 
                 # Fill NaN values in 'Share_filtered' with 0 before summing
-                merged_df['Share_filtered'].fillna(0, inplace=True)
-                merged_df['Share_asset'].fillna(0, inplace=True)
-                merged_df['Amount (USD)_filtered'].fillna(0, inplace=True)
-                merged_df['Amount (USD)_asset'].fillna(0, inplace=True)
-                merged_df['Total Amount (USD)_filtered'].fillna(0, inplace=True)
-                merged_df['Total Amount (USD)_asset'].fillna(0, inplace=True)
+                merged_df['Share_filtered'] = merged_df['Share_filtered'].fillna(0)
+                merged_df['Share_asset'] = merged_df['Share_asset'].fillna(0)
+                merged_df['Amount (USD)_filtered'] = merged_df['Amount (USD)_filtered'].fillna(0)
+                merged_df['Amount (USD)_asset'] = merged_df['Amount (USD)_asset'].fillna(0)
+                merged_df['Total Amount (USD)_filtered'] = merged_df['Total Amount (USD)_filtered'].fillna(0)
+                merged_df['Total Amount (USD)_asset'] = merged_df['Total Amount (USD)_asset'].fillna(0)
 
                 # Sum 'Share' values and update 'Date' if there's a matching record in filtered_investment_log
                 merged_df['Share'] = merged_df['Share_asset'] + merged_df['Share_filtered']

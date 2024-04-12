@@ -1,5 +1,7 @@
 import os
-import datetime
+import datetime as dt
+from datetime import datetime, timedelta, time, date
+import pytz
 
 from dotenv import load_dotenv
 
@@ -34,11 +36,7 @@ def process_investment_transactions(start_date=None, end_date=None):
     from_email = "no-reply@dime.co.th"
     subject_keyword = "Confirmation Note"
 
-    if start_date is None and end_date is None:
-        today = datetime.date.today()
-        last_month = (today.replace(day=1) - datetime.timedelta(days=1))
-        start_date = last_month.replace(day=1)
-        end_date = last_month.replace(day=last_month.day)
+
 
     print(start_date, end_date)
 
@@ -69,7 +67,7 @@ def process_investment_transactions(start_date=None, end_date=None):
     return None
 
 
-def test(start_date, end_date):
+def test(start_date, end_date, user_timezone):
     # load the variables from .env
     load_dotenv()
     username = os.getenv('USERNAME')
@@ -81,8 +79,20 @@ def test(start_date, end_date):
     from_email = "no-reply@dime.co.th"
     subject_keyword = "Confirmation Note"
 
-    investment_log = query_investment_log(spreadsheet_id=spreadsheet_id, range_name=range_name, start_date=start_date,
-                                          end_date=end_date)
 
-    process_investment_log(investment_log, spreadsheet_id, asset_track_range_name, start_date=start_date,
-                           end_date=end_date)
+    temp_time = time(8, 30, 00)
+
+    user_tz = pytz.timezone(user_timezone)
+    nyse_tz = pytz.timezone('America/New_York')
+    nyse_start_date = user_tz.localize(datetime.combine(start_date, temp_time)).astimezone(nyse_tz).date()
+    nyse_end_date = user_tz.localize(datetime.combine(end_date, temp_time)).astimezone(nyse_tz).date()
+    print("New York Time Start Date : ", nyse_start_date)
+    print("New York Time End Date: ", nyse_end_date)
+
+
+
+    investment_log = query_investment_log(spreadsheet_id=spreadsheet_id, range_name=range_name, start_date=nyse_start_date,
+                                          end_date=nyse_end_date)
+
+    process_investment_log(investment_log, spreadsheet_id, asset_track_range_name, start_date=nyse_start_date,
+                           end_date=nyse_end_date)

@@ -2,7 +2,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from src.util.auth import authenticate
-from src.module.stockInfo import get_last_available_trading_day_closing_price
+from src.module.stockInfo import get_last_available_trading_day_closing_price, check_valid_trading_date
 from src.module.importDataToGoogleSheet import import_invest_log_to_google_sheet
 
 from datetime import datetime, timedelta, time
@@ -52,9 +52,10 @@ def query_investment_log(spreadsheet_id: str, range_name: str, start_date: datet
 
 def process_investment_log(investment_log, spreadsheet_id: str, asset_log_range_name: str, start_date: datetime.date,
                            end_date: datetime.date):
+    temp_time = time(8, 30, 00)
+
     drop_column = ['Type', 'Have Dividend', 'Stock Price (USD)', 'Commission (USD)', 'Tax (USD)', 'Status', 'Note']
     investment_log = investment_log.drop(columns=drop_column, axis=1)
-
     investment_log["Share"] = investment_log["Share"].astype(np.float64)
     investment_log["Amount (USD)"] = investment_log["Amount (USD)"].astype(np.float64)
     investment_log["Total Amount (USD)"] = investment_log["Total Amount (USD)"].astype(np.float64)
@@ -75,8 +76,7 @@ def process_investment_log(investment_log, spreadsheet_id: str, asset_log_range_
     # Process asset value for each day
     for process_date in date_list:
         print("Processing date: ", process_date)
-
-        temp_time = time(8, 30, 00)
+        nyse_temp_datetime = datetime.combine(process_date, temp_time)
 
         # Filtering investment_log for the current date
         mask = (investment_log['Date'] == pd.to_datetime(process_date))  # Assuming the first column is named 'Date'
@@ -89,8 +89,13 @@ def process_investment_log(investment_log, spreadsheet_id: str, asset_log_range_
 
         asset_log = query_investment_log(spreadsheet_id, asset_log_range_name, process_date - timedelta(days=1),
                                          process_date - timedelta(days=1))
-        asset_log = asset_log.drop(columns=['Closing Stock Price'], axis=1)
+        asset_log = asset_log.drop(
+            columns=['Closing Stock Price', 'Valuation', 'Is Market Open', 'Performance', 'Total Performance'], axis=1)
         asset_log["Share"] = asset_log["Share"].astype(np.float64)
+
+        asset_log["Share"] = asset_log["Share"].astype(np.float64)
+        asset_log["Amount (USD)"] = asset_log["Amount (USD)"].astype(np.float64)
+        asset_log["Total Amount (USD)"] = asset_log["Total Amount (USD)"].astype(np.float64)
 
         final_df = asset_log
 
@@ -99,9 +104,6 @@ def process_investment_log(investment_log, spreadsheet_id: str, asset_log_range_
             final_df = filtered_investment_log
 
             if not asset_log.empty:
-                asset_log["Share"] = asset_log["Share"].astype(np.float64)
-                asset_log["Amount (USD)"] = asset_log["Amount (USD)"].astype(np.float64)
-                asset_log["Total Amount (USD)"] = asset_log["Total Amount (USD)"].astype(np.float64)
                 # Merging on multiple keys; note that 'Date' and other columns not used for merging will
                 # be duplicated if not handled
                 # Merge DataFrames with an outer join to ensure all records are included
@@ -132,26 +134,50 @@ def process_investment_log(investment_log, spreadsheet_id: str, asset_log_range_
                 # Ensure no duplicate entries
                 final_df = final_df.drop_duplicates(subset=['Port', 'Product Name', 'Sector', 'Industry'])
 
-                print(final_df)
-
         elif asset_log.empty:
-            return []
+            print("There isn't have trading data on this date yet.")
+            continue
         stock_triggers = final_df['Product Name'].values
         closing_prices = []
+        performances = []
+        total_performances = []
+        valuations = []
         for trigger in stock_triggers:
-            date_time = datetime.combine(process_date, temp_time)
+            print("Fetch closing price of ", trigger)
             closing_price = get_last_available_trading_day_closing_price(stock_name=trigger,
-                                                                         target_date=date_time)
+                                                                         target_date=nyse_temp_datetime,
+                                                                         user_timezone='America/New_York')
             closing_prices.append(closing_price)
 
-        final_df.insert(8, 'Closing Stock Price', closing_prices, True)
-        # Calculate valuation with precision using Decimal
-        final_df['Valuation'] = final_df['Closing Stock Price'] * final_df['Share']
+            temp_asset_log = final_df.loc[(final_df["Product Name"] == trigger)]
+            temp_asset_log = temp_asset_log.iloc[0]
+            share = temp_asset_log['Share']
+            amount_usd = temp_asset_log['Amount (USD)']
+            total_amount_usd = temp_asset_log['Total Amount (USD)']
+            if not share == 0:
+                valuation = closing_price * share
+                valuations.append(valuation)
+                performances.append((valuation - amount_usd) / amount_usd)
+                total_performances.append(
+                    (valuation - total_amount_usd) / total_amount_usd)
+            else:
+                valuations.append(0)
+                performances.append(0)
+                total_performances.append(0)
+
+        is_close = check_valid_trading_date(nyse_temp_datetime, 'America/New_York')
+
+        final_df.insert(1, 'Is Market Open', is_close, True)
+        final_df.insert(9, 'Closing Stock Price', closing_prices, True)
+        final_df.insert(10, 'Valuation', valuations, True)
+        final_df.insert(11, 'Performance', performances, True)
+        final_df.insert(12, 'Total Performance', total_performances, True)
+
         final_df['Date'] = process_date.strftime('%Y-%m-%d')
+
+        print(final_df)
+
         x = final_df.values.tolist()
 
         import_invest_log_to_google_sheet(spreadsheet_id, asset_log_range_name, "USER_ENTERED",
                                           x)
-        # return filtered_investment_log
-
-    return investment_log

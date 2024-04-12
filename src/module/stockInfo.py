@@ -138,3 +138,19 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
     except Exception as e:
         print(f"An error occurred while fetching the stock price: {e}")
         return None
+
+
+def check_valid_trading_date(target_date: datetime, user_timezone: str = 'Asia/Bangkok') -> bool:
+    # Create a NYSE calendar
+    nyse = mcal.get_calendar('NYSE')
+
+    # Convert target_date to NYSE timezone
+    user_tz = pytz.timezone(user_timezone)
+    nyse_tz = pytz.timezone('America/New_York')
+    target_date = user_tz.localize(target_date).astimezone(nyse_tz)
+    trading_days = nyse.valid_days(start_date=target_date.strftime('%Y-%m-%d'),
+                                   end_date=target_date.strftime('%Y-%m-%d'))
+
+    if len(trading_days) == 0:
+        return False  # No trading days found up to this date
+    return True

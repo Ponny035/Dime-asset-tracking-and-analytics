@@ -114,6 +114,7 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
 
     # Convert target_date to NYSE timezone
     user_tz = pytz.timezone(user_timezone)
+    print(stock_name, target_date, user_timezone)
     nyse_tz = pytz.timezone('America/New_York')
     target_date = user_tz.localize(target_date).astimezone(nyse_tz)
 
@@ -121,10 +122,11 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
     adjusted_date = target_date
     trading_days = nyse.valid_days(start_date='1900-01-01', end_date=adjusted_date.strftime('%Y-%m-%d'))
     if len(trading_days) == 0:
+        print("No Trading day found")
         return None  # No trading days found up to this date
 
     last_trading_day = trading_days[-1].date()
-
+    print(last_trading_day)
     # Convert last trading day back to user's timezone for the yfinance request
     last_trading_day_nyse_tz = nyse_tz.localize(datetime.combine(last_trading_day, datetime.min.time()))
     last_trading_day_user_tz = last_trading_day_nyse_tz.astimezone(user_tz).date()
@@ -141,15 +143,25 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
 
 
 def check_valid_trading_date(target_date: datetime, user_timezone: str = 'Asia/Bangkok') -> bool:
+    """
+    Check if a given date is a valid trading date in the NYSE calendar.
+
+    Args:
+        target_date (datetime): The date to check for trading validity.
+        user_timezone (str, optional): The user's timezone. Defaults to 'Asia/Bangkok'.
+
+    Returns:
+        bool: True if the target_date is a valid trading date, False otherwise.
+    """
     # Create a NYSE calendar
-    nyse = mcal.get_calendar('NYSE')
+    nyse_calendar = mcal.get_calendar('NYSE')
 
     # Convert target_date to NYSE timezone
-    user_tz = pytz.timezone(user_timezone)
+    local_tz = pytz.timezone(user_timezone)
     nyse_tz = pytz.timezone('America/New_York')
-    target_date = user_tz.localize(target_date).astimezone(nyse_tz)
-    trading_days = nyse.valid_days(start_date=target_date.strftime('%Y-%m-%d'),
-                                   end_date=target_date.strftime('%Y-%m-%d'))
+    local_target_date = local_tz.localize(target_date).astimezone(nyse_tz)
+    trading_days = nyse_calendar.valid_days(start_date=local_target_date.strftime('%Y-%m-%d'),
+                                            end_date=local_target_date.strftime('%Y-%m-%d'))
 
     if len(trading_days) == 0:
         return False  # No trading days found up to this date

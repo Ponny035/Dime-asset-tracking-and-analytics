@@ -1,19 +1,17 @@
 import os
-import datetime as dt
-from datetime import datetime, timedelta, time, date
-import pytz
+from datetime import datetime, time
 
+import pytz
 from dotenv import load_dotenv
 
-from src.module.queryEmailRecord import query_emails
 from src.module.PDFProcessing import process_pdf
-from src.module.stockInfo import format_transaction
+from src.module.assetTracking import query_investment_log, process_asset_log
 from src.module.importDataToGoogleSheet import import_invest_log_to_google_sheet
+from src.module.queryEmailRecord import query_emails
+from src.module.stockInfo import format_transaction
 
-from src.module.assetTracking import query_investment_log, process_investment_log
 
-
-def process_investment_transactions(start_date=None, end_date=None):
+def process_investment_transactions(start_date, end_date, user_timezone='Asia/Bangkok'):
     """
     Process investment transactions by reading emails, extracting PDF attachments, parsing transaction details,
     and importing them into a Google Sheet.
@@ -21,6 +19,7 @@ def process_investment_transactions(start_date=None, end_date=None):
     Args:
         start_date (datetime.date, optional): The start date for the email search. Defaults to None.
         end_date (datetime.date, optional): The end date for the email search. Defaults to None.
+        user_timezone (str): The user's timezone.
 
     Returns:
         None
@@ -36,9 +35,14 @@ def process_investment_transactions(start_date=None, end_date=None):
     from_email = "no-reply@dime.co.th"
     subject_keyword = "Confirmation Note"
 
+    temp_time = time(8, 30, 00)
 
-
-    print(start_date, end_date)
+    user_tz = pytz.timezone(user_timezone)
+    bkk_tz = pytz.timezone('Asia/Bangkok')
+    bkk_start_date = user_tz.localize(datetime.combine(start_date, temp_time)).astimezone(bkk_tz).date()
+    bkk_end_date = user_tz.localize(datetime.combine(end_date, temp_time)).astimezone(bkk_tz).date()
+    print("Bangkok Time Start Date : ", bkk_start_date)
+    print("Bangkok Time End Date: ", bkk_end_date)
 
     # call the read_emails function with the start and end dates
     pdf_path_list = query_emails(start_date, end_date, username, app_password, from_email, subject_keyword)
@@ -67,18 +71,23 @@ def process_investment_transactions(start_date=None, end_date=None):
     return None
 
 
-def test(start_date, end_date, user_timezone):
+def process_asset_tracking(start_date, end_date, user_timezone):
+    """
+        Process asset logs by querying investment logs and updating asset tracking table according to each investment.
+
+        Args:
+            start_date (datetime.date): The start date for processing.
+            end_date (datetime.date): The end date for processing.
+            user_timezone (str): The user's timezone.
+
+        Returns:
+            None
+        """
     # load the variables from .env
     load_dotenv()
-    username = os.getenv('USERNAME')
-    app_password = os.getenv('APP_PASSWORD')
-    pdf_password = os.getenv('PDF_PASSWORD')
     spreadsheet_id = os.getenv('SPREADSHEET_ID')
     range_name = os.getenv('INVEST_LOG_RANGE_NAME')
     asset_track_range_name = os.getenv('ASSET_TRACKING_RANGE_NAME')
-    from_email = "no-reply@dime.co.th"
-    subject_keyword = "Confirmation Note"
-
 
     temp_time = time(8, 30, 00)
 
@@ -89,10 +98,14 @@ def test(start_date, end_date, user_timezone):
     print("New York Time Start Date : ", nyse_start_date)
     print("New York Time End Date: ", nyse_end_date)
 
+    print("get investment log")
 
-
-    investment_log = query_investment_log(spreadsheet_id=spreadsheet_id, range_name=range_name, start_date=nyse_start_date,
+    investment_log = query_investment_log(spreadsheet_id=spreadsheet_id, range_name=range_name,
+                                          start_date=nyse_start_date,
                                           end_date=nyse_end_date)
 
-    process_investment_log(investment_log, spreadsheet_id, asset_track_range_name, start_date=nyse_start_date,
-                           end_date=nyse_end_date)
+    print("process asset log")
+    process_asset_log(investment_log, spreadsheet_id, asset_track_range_name, start_date=nyse_start_date,
+                      end_date=nyse_end_date)
+
+    return None

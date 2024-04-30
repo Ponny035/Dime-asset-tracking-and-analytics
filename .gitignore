@@ -112,6 +112,7 @@ ENV/
 env.bak/
 venv.bak/
 data/
+.DS_Store
 
 # Spyder project settings
 .spyderproject

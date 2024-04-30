@@ -118,7 +118,7 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
     target_date = user_tz.localize(target_date).astimezone(nyse_tz)
 
     # Adjust the date for trading day search
-    adjusted_date = target_date + timedelta(days=1)
+    adjusted_date = target_date
     trading_days = nyse.valid_days(start_date='1900-01-01', end_date=adjusted_date.strftime('%Y-%m-%d'))
     if len(trading_days) == 0:
         return None  # No trading days found up to this date

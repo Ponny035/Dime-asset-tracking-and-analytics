@@ -38,12 +38,12 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
                 date = datetime.datetime.strptime(date_str, '%d/%m/%Y').date()
 
             # Create a set of stock exchanges
-            stock_exchanges = {"[XNYS]", "[XNAS]", "[ARCX]"}
+            us_stock_exchanges = {"[XNYS]", "[XNAS]", "[ARCX]"}
 
             # Loop over each line in the page
             for line_num, line in enumerate(lines):
                 # Check if the line contains a stock exchange
-                for exchange in stock_exchanges:
+                for exchange in us_stock_exchanges:
                     if exchange in line:
                         # Extract transaction details from the order header and order detail lines
                         order_header = lines[line_num - 1].split(" ")
@@ -55,21 +55,27 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
                         price = order_detail[1]
                         amount = float(order_detail[2][3:])
                         commission_and_tax = float(order_detail[3])
+                        calculate_withholding_tax = 0
 
                         # Calculate the commission and tax
                         commission = 0
-                        tax = 0
                         if commission_and_tax != 0:
                             commission = round((amount * (0.15 / 100)), 2)
-                            tax = round(commission * (7 / 100), 2)
-                            if (tax + commission) != commission_and_tax:
-                                tax = commission_and_tax - commission
+                            calculate_withholding_tax = round(commission * (7 / 100), 2)
+                            if (calculate_withholding_tax + commission) != commission_and_tax:
+                                calculate_withholding_tax = commission_and_tax - commission
 
                         # Get the withholding tax from the next line
-                        withholding_tax = lines[line_num + 1][4:9]
+                        pdf_withholding_tax = lines[line_num + 1][4:9]
+
+                        if pdf_withholding_tax == calculate_withholding_tax:
+                            withholding_tax = calculate_withholding_tax
+                        else:
+                            withholding_tax = calculate_withholding_tax
 
                         # Add the transaction to the list of transactions
-                        transactions.append([transaction_type, stock_name, share, price, commission, tax, amount])
+                        transactions.append(
+                            [transaction_type, stock_name, share, price, commission, withholding_tax, amount])
 
         # Return the date and transactions as a tuple
         return date, transactions

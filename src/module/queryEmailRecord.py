@@ -1,12 +1,15 @@
 import os
 import datetime
+
 import email
 import email.message
 from email.header import decode_header
+
 import imaplib
+from imaplib import IMAP4_SSL
 
 
-def connect_to_server(username: str, app_password: str) -> imaplib.IMAP4_SSL:
+def connect_to_server(username: str, app_password: str) -> IMAP4_SSL | None:
     """
     Connects to the IMAP server.
 
@@ -27,7 +30,7 @@ def connect_to_server(username: str, app_password: str) -> imaplib.IMAP4_SSL:
 
 
 def search_emails(mail: imaplib.IMAP4_SSL, start_date: datetime.datetime, end_date: datetime.datetime,
-                  subject_keyword: str, from_email: str) -> list:
+                  subject_keyword: str, email_address: str) -> list:
     """
     Searches for emails that match the given criteria.
 
@@ -36,14 +39,14 @@ def search_emails(mail: imaplib.IMAP4_SSL, start_date: datetime.datetime, end_da
         start_date (datetime.datetime): The start date for the email search.
         end_date (datetime.datetime): The end date for the email search.
         subject_keyword (str): The subject keyword to search for.
-        from_email (str): The email address to search for in the "from" field.
+        email_address (str): The email address to search for in the "from" field.
 
     Returns:
         list: A list of email IDs that match the given criteria.
     """
     since_date = start_date.strftime('%d-%b-%Y')
     before_date = (end_date + datetime.timedelta(days=1)).strftime('%d-%b-%Y')
-    search_criteria = f'SINCE "{since_date}" BEFORE "{before_date}" SUBJECT "{subject_keyword}" FROM "{from_email}"'
+    search_criteria = f'SINCE "{since_date}" BEFORE "{before_date}" SUBJECT "{subject_keyword}" FROM "{email_address}"'
     try:
         status, data = mail.search(None, search_criteria)
     except Exception as e:
@@ -105,8 +108,8 @@ def save_attachment(part: email.message.Message, filename: str) -> None:
     print(f"Downloaded attachment: {file_path}")
 
 
-def read_emails(start_date: datetime.datetime, end_date: datetime.datetime, username: str,
-                app_password: str, from_email: str, subject_keyword: str) -> list:
+def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, username: str,
+                 app_password: str, from_email: str, subject_keyword: str) -> list:
     """
     Searches for and processes emails that match the given criteria.
 
@@ -123,9 +126,19 @@ def read_emails(start_date: datetime.datetime, end_date: datetime.datetime, user
     """
     file_list = []
     try:
+        print("Connecting to mail server.")
         with connect_to_server(username, app_password) as mail:
+            print("Mail server connected.")
             mail.select('inbox')
+            print("Searching E-mail.")
             matching_emails = search_emails(mail, start_date, end_date, subject_keyword, from_email)
+
+            if len(matching_emails) >= 1:
+                print("Found", str(len(matching_emails)), "E-mails.")
+            elif len(matching_emails) == 1:
+                print("Found 1 E-mail.")
+            elif len(matching_emails) == 0:
+                print("No match E-mail Found.")
 
             for num in matching_emails:
                 try:

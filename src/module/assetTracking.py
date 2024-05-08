@@ -70,6 +70,8 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
         return None
 
     date_range = pd.date_range(start=start_date, end=end_date)
+    asset_log = None
+    final_df = None
     for process_date in date_range:
         print("Processing date:", process_date)
         nyse_temp_datetime = datetime.combine(process_date, temp_time)
@@ -77,8 +79,13 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
         if filtered_investment_log.empty:
             print("There isn't any trading data for this date yet.")
 
-        asset_log = query_investment_log(spreadsheet_id, asset_log_range_name, process_date - timedelta(days=1),
-                                         process_date - timedelta(days=1))
+        if asset_log is None:
+            print("Query asset log")
+            asset_log = query_investment_log(spreadsheet_id, asset_log_range_name, process_date - timedelta(days=1),
+                                             process_date - timedelta(days=1))
+        elif final_df is not None:
+            print("Updating asset log")
+            asset_log = pd.concat([asset_log, final_df], ignore_index=True)
         is_market_open = check_valid_trading_date(nyse_temp_datetime, 'America/New_York')
         final_df = asset_log if filtered_investment_log.empty else filtered_investment_log
         if is_market_open:

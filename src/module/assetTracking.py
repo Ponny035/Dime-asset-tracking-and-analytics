@@ -85,6 +85,7 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
         elif final_df is not None:
             print("Updating asset log")
             asset_log = pd.concat([asset_log, final_df], ignore_index=True)
+            asset_log = final_df
         is_market_open = check_valid_trading_date(nyse_temp_datetime, 'America/New_York')
         final_df = asset_log if filtered_investment_log.empty else filtered_investment_log
         if is_market_open:

@@ -37,9 +37,8 @@ def query_investment_log(spreadsheet_id: str, range_name: str, start_date: datet
         investment_log[investment_log.columns[0]] = pd.to_datetime(investment_log[investment_log.columns[0]])
         start_datetime, end_datetime = pd.to_datetime(start_date), pd.to_datetime(end_date)
         mask = (investment_log[investment_log.columns[0]] >= start_datetime) & (
-                investment_log[investment_log.columns[0]] <= end_datetime)
+            investment_log[investment_log.columns[0]] <= end_datetime)
         return investment_log.loc[mask]
-
     except HttpError as err:
         print(err)
 
@@ -85,9 +84,31 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
                                              process_date - timedelta(days=1))
         elif final_df is not None:
             print("Updating asset log")
-            asset_log = pd.concat([asset_log, final_df], ignore_index=True)
+            asset_log = final_df
         is_market_open = check_valid_trading_date(nyse_temp_datetime, 'America/New_York')
-        final_df = asset_log if filtered_investment_log.empty else filtered_investment_log
+        if filtered_investment_log.empty:
+            final_df = asset_log
+        else:
+            # handle multiple transactions on one trigger in one day
+            grouped_data = filtered_investment_log.groupby(['Product Name'], as_index=False).agg(
+                {
+                    'Date': 'first',
+                    'Port': 'first',
+                    'Sector': 'first',
+                    'Industry': 'first',
+                    'Amount (USD)': 'sum',
+                    'Total Amount (USD)': 'sum',
+                    'Share': 'sum'
+                }
+            )
+
+            # Round the numeric columns to 7 decimal places
+            numeric_columns = grouped_data.select_dtypes(include=['number']).columns
+            grouped_data[numeric_columns] = grouped_data[numeric_columns].round(7)
+
+            filtered_investment_log = grouped_data
+            final_df = filtered_investment_log
+
         if is_market_open:
             asset_log = asset_log.drop(
                 columns=['Closing Stock Price', 'Valuation', 'Is Market Open', 'Performance', 'Total Performance'],
@@ -100,10 +121,11 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
                     ['Share_asset', 'Amount (USD)_asset', 'Total Amount (USD)_asset']].fillna(0)
                 merged_df[['Share_filtered', 'Amount (USD)_filtered', 'Total Amount (USD)_filtered']] = merged_df[
                     ['Share_filtered', 'Amount (USD)_filtered', 'Total Amount (USD)_filtered']].fillna(0)
-                merged_df['Share'] = merged_df['Share_asset'] + merged_df['Share_filtered']
-                merged_df['Amount (USD)'] = merged_df['Amount (USD)_asset'] + merged_df['Amount (USD)_filtered']
-                merged_df['Total Amount (USD)'] = merged_df['Total Amount (USD)_asset'] + merged_df[
-                    'Total Amount (USD)_filtered']
+                merged_df['Share'] = (merged_df['Share_asset'] + merged_df['Share_filtered']).round(7)
+                merged_df['Amount (USD)'] = (
+                    merged_df['Amount (USD)_asset'] + merged_df['Amount (USD)_filtered']).round(2)
+                merged_df['Total Amount (USD)'] = (merged_df['Total Amount (USD)_asset'] + merged_df[
+                    'Total Amount (USD)_filtered']).round(2)
                 merged_df['Date'] = merged_df['Date_asset']
                 print(merged_df)
                 final_df = merged_df[['Date', 'Port', 'Product Name', 'Sector', 'Industry', 'Share', 'Amount (USD)',
@@ -142,7 +164,6 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
         else:
             final_df = asset_log
             final_df['Is Market Open'] = False
-            print(final_df)
         final_df['Date'] = process_date.strftime('%Y-%m-%d')
         print(final_df)
         import_invest_log_to_google_sheet(spreadsheet_id, asset_log_range_name, "USER_ENTERED",

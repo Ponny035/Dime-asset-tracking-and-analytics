@@ -37,9 +37,8 @@ def query_investment_log(spreadsheet_id: str, range_name: str, start_date: datet
         investment_log[investment_log.columns[0]] = pd.to_datetime(investment_log[investment_log.columns[0]])
         start_datetime, end_datetime = pd.to_datetime(start_date), pd.to_datetime(end_date)
         mask = (investment_log[investment_log.columns[0]] >= start_datetime) & (
-                investment_log[investment_log.columns[0]] <= end_datetime)
+            investment_log[investment_log.columns[0]] <= end_datetime)
         return investment_log.loc[mask]
-
     except HttpError as err:
         print(err)
 
@@ -143,7 +142,6 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
         else:
             final_df = asset_log
             final_df['Is Market Open'] = False
-            print(final_df)
         final_df['Date'] = process_date.strftime('%Y-%m-%d')
         print(final_df)
         import_invest_log_to_google_sheet(spreadsheet_id, asset_log_range_name, "USER_ENTERED",

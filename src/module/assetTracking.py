@@ -86,7 +86,29 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
             print("Updating asset log")
             asset_log = final_df
         is_market_open = check_valid_trading_date(nyse_temp_datetime, 'America/New_York')
-        final_df = asset_log if filtered_investment_log.empty else filtered_investment_log
+        if filtered_investment_log.empty:
+            final_df = asset_log
+        else:
+            # handle multiple transactions on one trigger in one day
+            grouped_data = filtered_investment_log.groupby(['Product Name'], as_index=False).agg(
+                {
+                    'Date': 'first',
+                    'Port': 'first',
+                    'Sector': 'first',
+                    'Industry': 'first',
+                    'Amount (USD)': 'sum',
+                    'Total Amount (USD)': 'sum',
+                    'Share': 'sum'
+                }
+            )
+
+            # Round the numeric columns to 7 decimal places
+            numeric_columns = grouped_data.select_dtypes(include=['number']).columns
+            grouped_data[numeric_columns] = grouped_data[numeric_columns].round(7)
+
+            filtered_investment_log = grouped_data
+            final_df = filtered_investment_log
+
         if is_market_open:
             asset_log = asset_log.drop(
                 columns=['Closing Stock Price', 'Valuation', 'Is Market Open', 'Performance', 'Total Performance'],

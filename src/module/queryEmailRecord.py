@@ -133,7 +133,7 @@ def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, use
             print("Searching E-mail.")
             matching_emails = search_emails(mail, start_date, end_date, subject_keyword, from_email)
 
-            if len(matching_emails) >= 1:
+            if len(matching_emails) > 1:
                 print("Found", str(len(matching_emails)), "E-mails.")
             elif len(matching_emails) == 1:
                 print("Found 1 E-mail.")

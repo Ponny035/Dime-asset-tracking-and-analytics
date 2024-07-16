@@ -100,10 +100,11 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
                     ['Share_asset', 'Amount (USD)_asset', 'Total Amount (USD)_asset']].fillna(0)
                 merged_df[['Share_filtered', 'Amount (USD)_filtered', 'Total Amount (USD)_filtered']] = merged_df[
                     ['Share_filtered', 'Amount (USD)_filtered', 'Total Amount (USD)_filtered']].fillna(0)
-                merged_df['Share'] = merged_df['Share_asset'] + merged_df['Share_filtered']
-                merged_df['Amount (USD)'] = merged_df['Amount (USD)_asset'] + merged_df['Amount (USD)_filtered']
-                merged_df['Total Amount (USD)'] = merged_df['Total Amount (USD)_asset'] + merged_df[
-                    'Total Amount (USD)_filtered']
+                merged_df['Share'] = (merged_df['Share_asset'] + merged_df['Share_filtered']).round(7)
+                merged_df['Amount (USD)'] = (
+                    merged_df['Amount (USD)_asset'] + merged_df['Amount (USD)_filtered']).round(2)
+                merged_df['Total Amount (USD)'] = (merged_df['Total Amount (USD)_asset'] + merged_df[
+                    'Total Amount (USD)_filtered']).round(2)
                 merged_df['Date'] = merged_df['Date_asset']
                 print(merged_df)
                 final_df = merged_df[['Date', 'Port', 'Product Name', 'Sector', 'Industry', 'Share', 'Amount (USD)',

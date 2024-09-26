@@ -79,15 +79,30 @@ def extract_attachment_info(part: email.message.Message) -> str:
         part (email.message.Message): The email message object representing the attachment.
 
     Returns:
-        str: The extracted filename.
+        str: The extracted filename in the format: 'YYYY-MM-DD_confirmationNote.pdf'.
     """
     if part.get_filename():
         filename_parts = part.get_filename().split("_")
-        date_str = filename_parts[4][:8]
-        date = datetime.datetime.strptime(date_str, '%d%m%Y').date()
-        filename = f"{str(date)}_{filename_parts[4][8:-4]}_confirmationNote.pdf"
+
+        # Ensure the filename has enough parts before accessing indices
+        if len(filename_parts) > 4 and len(filename_parts[4]) >= 8:
+            date_str = filename_parts[4][:8]
+            try:
+                # Parse the date string
+                date = datetime.datetime.strptime(date_str, '%d%m%Y').date()
+                # Construct the new filename
+                filename = f"{str(date)}_{filename_parts[4][8:-4]}_confirmationNote.pdf"
+            except ValueError:
+                # Handle incorrect date formatting
+                print(f"Invalid date format in filename: {filename_parts[4]}")
+                filename = 'attachment_confirmationNote.pdf'
+        else:
+            # Fallback if filename doesn't have enough parts
+            print(f"Filename doesn't match expected format: {part.get_filename()}")
+            filename = 'attachment_confirmationNote.pdf'
     else:
-        filename = 'attachment.pdf'
+        filename = 'attachment_confirmationNote.pdf'
+
     return filename
 
 
@@ -134,25 +149,37 @@ def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, use
             matching_emails = search_emails(mail, start_date, end_date, subject_keyword, from_email)
 
             if len(matching_emails) > 1:
-                print("Found", str(len(matching_emails)), "E-mails.")
+                print(f"Found {len(matching_emails)} E-mails.")
             elif len(matching_emails) == 1:
                 print("Found 1 E-mail.")
-            elif len(matching_emails) == 0:
-                print("No match E-mail Found.")
+            else:
+                print("No matching E-mail found.")
 
             for num in matching_emails:
                 try:
                     status, email_data = mail.fetch(num, '(RFC822)')
-                    email_message = email.message_from_bytes(email_data[0][1])
-                    subject = decode_email_subject(email_message)
-                    print(f"Subject: {subject}")
-                    print(f"From: {email_message['From']}")
 
-                    for part in email_message.walk():
-                        if part.get_content_disposition() == 'attachment':
-                            filename = extract_attachment_info(part)
-                            save_attachment(part, filename)
-                            file_list.append("data/" + filename)
+                    # Ensure email_data exists and is properly structured
+                    if len(email_data) > 0 and isinstance(email_data[0], tuple) and len(email_data[0]) > 1:
+
+                        # Parse the email
+                        email_message = email.message_from_bytes(email_data[0][1])
+                        subject = decode_email_subject(email_message)
+                        print(f"Subject: {subject}")
+                        print(f"From: {email_message['From']}")
+
+                        # Walk through email parts for attachments
+                        if email_message.is_multipart():
+                            for part in email_message.walk():
+                                if part.get_content_disposition() == 'attachment':
+                                    filename = extract_attachment_info(part)
+                                    print(f"Found attachment: {filename}")
+                                    save_attachment(part, filename)
+                                    file_list.append(f"data/{filename}")
+                        else:
+                            print("This email is not multipart; no attachments found.")
+                    else:
+                        print("Unexpected email data structure.")
                 except Exception as e:
                     print(f"Error processing email: {e}")
 

@@ -1,4 +1,4 @@
-import PyPDF2
+import pypdf
 import datetime
 
 
@@ -18,7 +18,7 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
     # Open the locked PDF file with the given password
     with open(pdf_file_path, 'rb') as pdf_file:
         # Create a PDF reader object
-        pdf_reader = PyPDF2.PdfReader(pdf_file, password=password)
+        pdf_reader = pypdf.PdfReader(pdf_file, password=password)
 
         # Create an empty list to store the transactions
         transactions = []
@@ -34,7 +34,7 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
 
             # Get the date from the 15th line
             if date is None:
-                date_str = lines[14][0:10]
+                date_str = lines[20][0:10]
                 date = datetime.datetime.strptime(date_str, '%d/%m/%Y').date()
 
             # Create a set of stock exchanges
@@ -46,15 +46,16 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
                 for exchange in us_stock_exchanges:
                     if exchange in line:
                         # Extract transaction details from the order header and order detail lines
-                        order_header = lines[line_num - 1].split(" ")
-                        transaction_type = order_header[2][:3]
-                        stock_name = order_header[2][3:]
+                        order_header = lines[line_num - 2].split(" ")
+                        transaction_type = order_header[2]
+                        stock_name = lines[line_num - 1]
 
-                        order_detail = line.split(" ")
-                        share = order_detail[0][6:]
+                        order_detail = lines[line_num + 1]
+                        order_detail = order_detail.split(" ")
+                        share = order_detail[0]
                         price = order_detail[1]
-                        amount = float(order_detail[2][3:])
-                        commission_and_tax = float(order_detail[3])
+                        amount = float(order_detail[3])
+                        commission_and_tax = float(order_detail[4])
                         calculate_withholding_tax = 0
 
                         # Calculate the commission and tax
@@ -66,7 +67,7 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
                                 calculate_withholding_tax = commission_and_tax - commission
 
                         # Get the withholding tax from the next line
-                        pdf_withholding_tax = lines[line_num + 1][4:9]
+                        pdf_withholding_tax = lines[line_num + 3]
 
                         if pdf_withholding_tax == calculate_withholding_tax:
                             withholding_tax = calculate_withholding_tax

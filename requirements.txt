@@ -6,7 +6,7 @@ certifi==2024.7.4
 charset-normalizer==3.3.2
 DateTime==5.4
 exchange_calendars==4.5.3
-finvizfinance==0.14.7
+finvizfinance==1.1.0
 frozendict==2.4.0
 google-api-core==2.17.1
 google-api-python-client==2.118.0

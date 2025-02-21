@@ -37,7 +37,7 @@ def query_investment_log(spreadsheet_id: str, range_name: str, start_date: datet
         investment_log[investment_log.columns[0]] = pd.to_datetime(investment_log[investment_log.columns[0]])
         start_datetime, end_datetime = pd.to_datetime(start_date), pd.to_datetime(end_date)
         mask = (investment_log[investment_log.columns[0]] >= start_datetime) & (
-            investment_log[investment_log.columns[0]] <= end_datetime)
+                investment_log[investment_log.columns[0]] <= end_datetime)
         return investment_log.loc[mask]
     except HttpError as err:
         print(err)
@@ -123,7 +123,7 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
                     ['Share_filtered', 'Amount (USD)_filtered', 'Total Amount (USD)_filtered']].fillna(0)
                 merged_df['Share'] = (merged_df['Share_asset'] + merged_df['Share_filtered']).round(7)
                 merged_df['Amount (USD)'] = (
-                    merged_df['Amount (USD)_asset'] + merged_df['Amount (USD)_filtered']).round(2)
+                        merged_df['Amount (USD)_asset'] + merged_df['Amount (USD)_filtered']).round(2)
                 merged_df['Total Amount (USD)'] = (merged_df['Total Amount (USD)_asset'] + merged_df[
                     'Total Amount (USD)_filtered']).round(2)
                 merged_df['Date'] = merged_df['Date_asset']

@@ -83,9 +83,9 @@ def extract_attachment_info(part: email.message.Message) -> str:
     """
     if part.get_filename():
         filename_parts = part.get_filename().split("_")
-
         # Ensure the filename has enough parts before accessing indices
         if len(filename_parts) > 4 and len(filename_parts[4]) >= 8:
+            # 2024-09 format
             date_str = filename_parts[4][:8]
             try:
                 # Parse the date string
@@ -95,6 +95,20 @@ def extract_attachment_info(part: email.message.Message) -> str:
             except ValueError:
                 # Handle incorrect date formatting
                 print(f"Invalid date format in filename: {filename_parts[4]}")
+                filename = 'attachment_confirmationNote.pdf'
+
+        if len(filename_parts) == 4 and len(filename_parts[3]) >= 8:
+            # 2024-10 format
+            date_str = filename_parts[3][6:-10]
+
+            try:
+                # Parse the date string
+                date = datetime.datetime.strptime(date_str, '%Y%m%d').date()
+                # Construct the new filename
+                filename = f"{str(date)}_{filename_parts[3][13:-4]}_confirmationNote.pdf"
+            except ValueError:
+                # Handle incorrect date formatting
+                print(f"Invalid date format in filename: {filename_parts[3]}")
                 filename = 'attachment_confirmationNote.pdf'
         else:
             # Fallback if filename doesn't have enough parts

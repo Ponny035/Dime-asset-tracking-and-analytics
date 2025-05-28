@@ -5,7 +5,7 @@ import pandas as pd
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from src.module.importDataToGoogleSheet import import_invest_log_to_google_sheet
+from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.stockInfo import get_last_available_trading_day_closing_price, check_valid_trading_date
 from src.util.auth import authenticate
 
@@ -166,5 +166,5 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
             final_df['Is Market Open'] = False
         final_df['Date'] = process_date.strftime('%Y-%m-%d')
         print(final_df)
-        import_invest_log_to_google_sheet(spreadsheet_id, asset_log_range_name, "USER_ENTERED",
+        export_invest_log_to_google_sheet(spreadsheet_id, asset_log_range_name, "USER_ENTERED",
                                           final_df.values.tolist())

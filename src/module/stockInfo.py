@@ -136,7 +136,7 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
         stock_data = yf.download(stock_name, start=last_trading_day_user_tz.strftime('%Y-%m-%d'),
                                  end=(last_trading_day_user_tz + timedelta(days=1)).strftime('%Y-%m-%d'))
         if not stock_data.empty:
-            return round(stock_data['Close'][stock_name].iloc[-1])
+            return round(stock_data['Close'][stock_name].iloc[-1],2)
     except Exception as e:
         print(f"An error occurred while fetching the stock price: {e}")
         return None

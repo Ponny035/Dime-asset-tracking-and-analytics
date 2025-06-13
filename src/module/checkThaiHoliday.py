@@ -61,7 +61,9 @@ def update_financial_institutions_holidays(client_id: str) -> bool:
     Returns:
         bool: True if update was successful or not needed, False if API failed.
     """
-    file_name = "financial_institutions_holidays.json"
+    # Get the main directory path (2 levels up from this file)
+    main_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    file_name = os.path.join(main_dir, "financial_institutions_holidays.json")
     today = datetime.now().strftime('%Y-%m-%d')
 
     # Step 1: Check existing file
@@ -70,7 +72,7 @@ def update_financial_institutions_holidays(client_id: str) -> bool:
             with open(file_name, 'r') as file:
                 existing_data = json.load(file)
                 if existing_data.get("update_time", "").startswith(today):
-                    logging.info("No update needed. Already updated today.")
+                    logging.info("\"financial_institutions_holidays\" No update needed. Already updated today.")
                     return True
         except (json.JSONDecodeError, IOError) as e:
             logging.warning(f"Problem reading existing file: {e}. Proceeding with update.")

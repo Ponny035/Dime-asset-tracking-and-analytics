@@ -8,46 +8,82 @@ from src.pipeline.processTransaction import process_asset_tracking
 from src.pipeline.processTransaction import process_investment_transactions
 from src.module.checkThaiHoliday import update_financial_institutions_holidays
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
-    # fname = f"state_source_{source}.json"
-    # fpath = os.path.join("data", fname)
-    # if os.path.isfile(fpath):
-    #     state = json_read(fpath)
-    #     source = state["source"]
-    #     skip = state["project_index"]
+# Load environment variables and get client ID
+load_dotenv()
+client_id = os.getenv('BOT_API_CLIENT_ID')
 
+def is_working_day(date):
+    # Check if it's weekend (5 = Saturday, 6 = Sunday)
+    if date.weekday() >= 5:
+        return False
+    
+    # Read holidays from JSON file
+    try:
+        with open('financial_institutions_holidays.json', 'r') as file:
+            holidays_data = json.load(file)
+            holidays = holidays_data.get('holidays', [])
+            
+            # Check if the date is in holidays list
+            date_str = date.strftime('%Y-%m-%d')
+            return date_str not in holidays
+    except (json.JSONDecodeError, IOError) as e:
+        logging.error(f"Error reading holidays file: {e}")
+        return True  # If we can't read the file, assume it's a working day
 
-# load_dotenv()
-# client_id = os.getenv('BOT_API_CLIENT_ID')
+file_name = "last_update_information.json"
+user_timezone = 'Asia/Bangkok'
 
+# Get today's date
+today = dt.datetime.now().date()
 
-# update_financial_institutions_holidays(client_id)
+# Update holidays information
+update_financial_institutions_holidays(client_id)
 
-file_name = "last_update_information"
+# Check if today is a working day
+if not is_working_day(today):
+    logging.info("Today is a holiday or weekend. Skipping processing.")
+    exit()
 
-start_date = dt.now().strftime('%Y-%m-%d')
-end_date = start_date
-
+# Try to read the last update information
 if os.path.isfile(file_name):
     try:
-        with open (file_name, 'r') as file:
+        with open(file_name, 'r') as file:
             existing_data = json.load(file)
-            if existing_data.get("update_time", "").startswith(start_date):
-                logging.info("No update needed. Already updated today.")
-    except (json.JSONDecodeError, IOError) as e:
-        logging.warning(f"Problem reading existing file: {e}. Proceeding with update.")
+            last_update = dt.datetime.strptime(existing_data.get("update_time", ""), '%Y-%m-%d').date()
             
-
+            if last_update == today:
+                logging.info("\"investment log\" No update needed. Already updated today.")
+                exit()
+            else:
+                start_date = last_update+dt.timedelta(days=1)
+                end_date = today
+    except (json.JSONDecodeError, IOError) as e:
+        logging.warning(f"Problem reading existing file: {e}. Starting fresh with today's date.")
+        start_date = today
+        end_date = today
 else:
-    # get user_input
+    # If file doesn't exist, start with today's date
+    start_date = today
+    end_date = today
+    
+    # Create new file with today's date
+    try:
+        with open(file_name, 'w') as file:
+            json.dump({"update_time": today.strftime('%Y-%m-%d')}, file)
+    except IOError as e:
+        logging.error(f"Failed to create update information file: {e}")
 
-    user_timezone = 'Asia/Bangkok'
-
-    # Specify the start and end dates
-    start_date = dt.date(2025, 5, 24)
-    end_date = dt.date(2025, 5, 26)
-
-# Call the function with the specified dates
+print(start_date, end_date)
+# Call the functions with the specified dates
 process_investment_transactions(start_date, end_date, user_timezone)
-
 process_asset_tracking(start_date, end_date, user_timezone)
+
+# Update the last update time after successful processing
+try:
+    with open(file_name, 'w') as file:
+        json.dump({"update_time": today.strftime('%Y-%m-%d')}, file)
+except IOError as e:
+    logging.error(f"Failed to update information file: {e}")

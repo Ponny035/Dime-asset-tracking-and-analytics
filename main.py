@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import datetime as dt
+import argparse
 from dotenv import load_dotenv
 
 from src.pipeline.processTransaction import process_asset_tracking
@@ -36,54 +37,67 @@ def is_working_day(date):
 file_name = "last_update_information.json"
 user_timezone = 'Asia/Bangkok'
 
-# Get today's date
-today = dt.datetime.now().date()
+def main():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Process investment transactions and asset tracking')
+    parser.add_argument('-m', '--manual', action='store_true', 
+                      help='Run in manual mode (bypass working day check)')
+    args = parser.parse_args()
 
-# Update holidays information
-update_financial_institutions_holidays(client_id)
+    # Get today's date
+    today = dt.datetime.now().date()
 
-# Check if today is a working day
-if not is_working_day(today):
-    logging.info("Today is a holiday or weekend. Skipping processing.")
-    exit()
+    # Update holidays information
+    print("Updating holidays information")
+    update_financial_institutions_holidays(client_id)
 
-# Try to read the last update information
-if os.path.isfile(file_name):
-    try:
-        with open(file_name, 'r') as file:
-            existing_data = json.load(file)
-            last_update = dt.datetime.strptime(existing_data.get("update_time", ""), '%Y-%m-%d').date()
-            
-            if last_update == today:
-                logging.info("\"investment log\" No update needed. Already updated today.")
-                exit()
-            else:
-                start_date = last_update+dt.timedelta(days=1)
-                end_date = today
-    except (json.JSONDecodeError, IOError) as e:
-        logging.warning(f"Problem reading existing file: {e}. Starting fresh with today's date.")
+    # Check if today is a working day (skip if manual mode)
+    if not args.manual and not is_working_day(today):
+        logging.info("Today is a holiday or weekend. Skipping processing.")
+        logging.info("Use -m or --manual flag to bypass this check.")
+        exit()
+
+    # Try to read the last update information
+    if os.path.isfile(file_name):
+        try:
+            with open(file_name, 'r') as file:
+                existing_data = json.load(file)
+                last_update = dt.datetime.strptime(existing_data.get("update_time", ""), '%Y-%m-%d').date()
+                
+                if not args.manual and last_update == today:
+                    logging.info("\"investment log\" No update needed. Already updated today.")
+                    logging.info("Use -m or --manual flag to force update.")
+                    exit()
+                else:
+                    start_date = last_update+dt.timedelta(days=1)
+                    end_date = today
+        except (json.JSONDecodeError, IOError) as e:
+            logging.warning(f"Problem reading existing file: {e}. Starting fresh with today's date.")
+            start_date = today
+            end_date = today
+    else:
+        # If file doesn't exist, start with today's date
         start_date = today
         end_date = today
-else:
-    # If file doesn't exist, start with today's date
-    start_date = today
-    end_date = today
-    
-    # Create new file with today's date
+        
+        # Create new file with today's date
+        try:
+            with open(file_name, 'w') as file:
+                json.dump({"update_time": today.strftime('%Y-%m-%d')}, file)
+        except IOError as e:
+            logging.error(f"Failed to create update information file: {e}")
+
+    print(f"Processing from {start_date} to {end_date}")
+    # Call the functions with the specified dates
+    process_investment_transactions(start_date, end_date, user_timezone)
+    process_asset_tracking(start_date, end_date, user_timezone)
+
+    # Update the last update time after successful processing
     try:
         with open(file_name, 'w') as file:
             json.dump({"update_time": today.strftime('%Y-%m-%d')}, file)
     except IOError as e:
-        logging.error(f"Failed to create update information file: {e}")
+        logging.error(f"Failed to update information file: {e}")
 
-print(start_date, end_date)
-# Call the functions with the specified dates
-process_investment_transactions(start_date, end_date, user_timezone)
-process_asset_tracking(start_date, end_date, user_timezone)
-
-# Update the last update time after successful processing
-try:
-    with open(file_name, 'w') as file:
-        json.dump({"update_time": today.strftime('%Y-%m-%d')}, file)
-except IOError as e:
-    logging.error(f"Failed to update information file: {e}")
+if __name__ == "__main__":
+    main()

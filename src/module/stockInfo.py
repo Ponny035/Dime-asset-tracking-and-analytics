@@ -4,7 +4,7 @@ from finvizfinance.quote import finvizfinance
 import yfinance as yf
 import pandas_market_calendars as mcal
 import pytz
-
+import pandas as pd
 
 def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     """
@@ -141,6 +141,115 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
         print(f"An error occurred while fetching the stock price: {e}")
         return None
 
+def get_bulk_available_trading_day_closing_price(
+    ticker: list[str], 
+    start_date: datetime, 
+    end_date: datetime,
+    user_timezone: str = 'Asia/Bangkok', 
+    fill: Literal['ffill', 'bfill', 'zero', 'nan'] | None = None
+) -> pd.DataFrame | None:
+    """
+    Fetch closing prices for multiple stock tickers within a given date range,
+    adjusting for the user's timezone.
+
+    Args:
+        ticker (list[str]): List of stock ticker symbols (e.g., ['AAPL', 'MSFT']).
+        start_date (datetime): Start of the date range (in user's local timezone).
+        end_date (datetime): End of the date range (in user's local timezone).
+        user_timezone (str, optional): User's timezone (default: 'Asia/Bangkok').
+        fill: Fill strategy for non-trading days:
+            • None: Return only trading days (default)
+            • 'ffill': Forward-fill last known price
+            • 'bfill': Back-fill next known price  
+            • 'zero': Fill missing days with 0
+            • 'nan': Insert missing days as NaN
+
+    Returns:
+        pd.DataFrame | None: DataFrame with dates as index and tickers as columns,
+                            containing closing prices. Returns None if no data available.
+
+    Notes:
+        - Converts dates from user's timezone to NYSE timezone for trading day calculations.
+        - Fetches closing prices for all valid trading days in the range using yfinance.
+        - If fill is specified, adds non-trading days and applies the chosen fill strategy.
+        - Returns None if no trading days are found or data is unavailable.
+
+    Example:
+        # Get raw trading day data only
+        data = get_bulk_available_trading_day_closing_price(
+            ['AAPL', 'MSFT'], 
+            datetime(2025, 6, 16), 
+            datetime(2025, 6, 23)
+        )
+        
+        # Get data with weekends forward-filled
+        data_filled = get_bulk_available_trading_day_closing_price(
+            ['AAPL', 'MSFT'], 
+            datetime(2025, 6, 16), 
+            datetime(2025, 6, 23),
+            fill='ffill'
+        )
+    """
+    nyse = mcal.get_calendar('NYSE')
+    user_tz = pytz.timezone(user_timezone)
+    nyse_tz = pytz.timezone('America/New_York')
+
+    # Convert end_date to NYSE timezone
+    end_date_nyse = user_tz.localize(end_date).astimezone(nyse_tz)
+
+    # Find all valid trading days up to the adjusted end date
+    trading_days = nyse.valid_days(
+        start_date='2000-01-01',
+        end_date=end_date_nyse.strftime('%Y-%m-%d'),
+        tz=nyse_tz
+    )
+    if len(trading_days) == 0:
+        return None
+
+    last_trading_day = trading_days[-1].date()
+    last_trading_day_nyse = nyse_tz.localize(datetime.combine(last_trading_day, datetime.min.time()))
+    last_trading_day_user = last_trading_day_nyse.astimezone(user_tz).date()
+
+    try:
+        # yfinance end date is exclusive, so add one day
+        yf_start = start_date.strftime('%Y-%m-%d')
+        yf_end = (last_trading_day_user + timedelta(days=1)).strftime('%Y-%m-%d')
+        data = yf.download(ticker, start=yf_start, end=yf_end)
+        
+        if not data.empty:
+            # Extract closing prices (handle both single and multi-ticker cases)
+            if len(ticker) == 1:
+                close_data = data['Close'].to_frame(ticker[0])
+            else:
+                close_data = data['Close']
+            
+            if fill is not None:
+                # Create complete date range
+                full_range = pd.date_range(
+                    start=start_date.date(), 
+                    end=end_date.date(), 
+                    freq='D'
+                )
+                
+                # Reindex to include all calendar days
+                close_data = close_data.reindex(full_range)
+                
+                # Apply fill strategy
+                if fill == 'ffill':
+                    close_data = close_data.fillna(method='ffill')
+                elif fill == 'bfill':
+                    close_data = close_data.fillna(method='bfill')
+                elif fill == 'zero':
+                    close_data = close_data.fillna(0)
+                elif fill == 'nan':
+                    pass  # Already has NaN for missing days
+            
+            return close_data.round(2)
+            
+    except Exception as e:
+        print(f"Error fetching stock price: {e}")
+    
+    return None
 
 def check_valid_trading_date(target_date: datetime, user_timezone: str = 'Asia/Bangkok') -> bool:
     """

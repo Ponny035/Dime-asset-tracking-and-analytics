@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from src.module.PDFProcessing import process_pdf
 from src.module.assetTracking import query_investment_log, process_asset_log
-from src.module.importDataToGoogleSheet import import_invest_log_to_google_sheet
+from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.queryEmailRecord import query_emails
 from src.module.stockInfo import format_transaction
 
@@ -27,7 +27,7 @@ def process_investment_transactions(start_date, end_date, user_timezone='Asia/Ba
 
     # load the variables from .env
     load_dotenv()
-    username = os.getenv('USERNAME')
+    email_address = os.getenv('EMAIL')
     app_password = os.getenv('APP_PASSWORD')
     pdf_password = os.getenv('PDF_PASSWORD')
     spreadsheet_id = os.getenv('SPREADSHEET_ID')
@@ -45,7 +45,7 @@ def process_investment_transactions(start_date, end_date, user_timezone='Asia/Ba
     print("Bangkok Time End Date: ", bkk_end_date)
 
     # call the read_emails function with the start and end dates
-    pdf_path_list = query_emails(start_date, end_date, username, app_password, from_email, subject_keyword)
+    pdf_path_list = query_emails(start_date, end_date, email_address, app_password, from_email, subject_keyword)
     print(pdf_path_list)
 
     date_and_transactions = []
@@ -66,7 +66,7 @@ def process_investment_transactions(start_date, end_date, user_timezone='Asia/Ba
             formated_transaction = format_transaction(price, commission, tax, amount, float(share),
                                                       stock_name, date, "Dime", transaction_type, "Done", "-")
             print(formated_transaction)
-            import_invest_log_to_google_sheet(spreadsheet_id, range_name, "USER_ENTERED", [formated_transaction])
+            export_invest_log_to_google_sheet(spreadsheet_id, range_name, "USER_ENTERED", [formated_transaction])
 
     return None
 

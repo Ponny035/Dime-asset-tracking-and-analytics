@@ -44,5 +44,5 @@ tzdata==2024.1
 uritemplate==4.1.1
 urllib3==2.5.0
 webencodings==0.5.1
-yfinance==0.2.54
+yfinance==0.2.61
 zope.interface==6.2

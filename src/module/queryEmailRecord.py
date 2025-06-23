@@ -9,12 +9,12 @@ import imaplib
 from imaplib import IMAP4_SSL
 
 
-def connect_to_server(username: str, app_password: str) -> IMAP4_SSL | None:
+def connect_to_server(email_address: str, app_password: str) -> IMAP4_SSL | None:
     """
     Connects to the IMAP server.
 
     Args:
-        username (str): The email account username.
+        email_address (str): The email account.
         app_password (str): The email account app password.
 
     Returns:
@@ -22,7 +22,7 @@ def connect_to_server(username: str, app_password: str) -> IMAP4_SSL | None:
     """
     try:
         mail = imaplib.IMAP4_SSL('imap.gmail.com')
-        mail.login(username, app_password)
+        mail.login(email_address, app_password)
     except Exception as e:
         print(f"Error connecting to the mail server: {e}")
         return None
@@ -137,7 +137,7 @@ def save_attachment(part: email.message.Message, filename: str) -> None:
     print(f"Downloaded attachment: {file_path}")
 
 
-def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, username: str,
+def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, email_address: str,
                  app_password: str, from_email: str, subject_keyword: str) -> list:
     """
     Searches for and processes emails that match the given criteria.
@@ -145,7 +145,7 @@ def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, use
     Args:
         start_date (datetime.datetime): The start date for the email search.
         end_date (datetime.datetime): The end date for the email search.
-        username (str): The email account username.
+        email_address (str): The email account.
         app_password (str): The email account app password.
         from_email (str): The email address to search for in the "from" field.
         subject_keyword (str): The subject keyword to search for.
@@ -156,7 +156,7 @@ def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, use
     file_list = []
     try:
         print("Connecting to mail server.")
-        with connect_to_server(username, app_password) as mail:
+        with connect_to_server(email_address, app_password) as mail:
             print("Mail server connected.")
             mail.select('inbox')
             print("Searching E-mail.")

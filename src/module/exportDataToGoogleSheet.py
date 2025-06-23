@@ -4,7 +4,7 @@ from googleapiclient.errors import HttpError
 from src.util.auth import authenticate
 
 
-def import_invest_log_to_google_sheet(spreadsheet_id: str, range_name: str,
+def export_invest_log_to_google_sheet(spreadsheet_id: str, range_name: str,
                                       value_input_option: str, transaction: list):
     """
     Imports the investment log to a Google Sheet.

@@ -10,6 +10,7 @@ from src.module.stockInfo import (
     get_last_available_trading_day_closing_price,
     check_valid_trading_date,
 )
+from src.module.updateTracker import update_last_update_date
 from src.util.auth import authenticate
 
 
@@ -69,6 +70,7 @@ def process_asset_log(
     start_date: datetime.date,
     end_date: datetime.date,
     auth_mode: str = "oauth",
+    update_tracker_params: dict = None,
 ):
     """
     Process asset log data by updating asset tracking information and importing it into a Google Sheet.
@@ -80,6 +82,10 @@ def process_asset_log(
         start_date (datetime.date): The start date of the date range being processed.
         end_date (datetime.date): The end date of the date range being processed.
         auth_mode (str): Authentication mode - "oauth" or "service_account".
+        update_tracker_params (dict): Parameters for updating progress tracker. Should contain:
+            - 'update_range': Range for last update tracking
+            - 'local_file': Local file path for tracking
+            If None, progress tracking is skipped.
 
     Returns:
         None
@@ -280,3 +286,17 @@ def process_asset_log(
             final_df.values.tolist(),
             auth_mode,
         )
+        
+        # Update progress tracker after processing each date
+        if update_tracker_params:
+            update_success = update_last_update_date(
+                spreadsheet_id,
+                update_tracker_params['update_range'],
+                update_tracker_params['local_file'],
+                process_date.date(),
+                auth_mode
+            )
+            if update_success:
+                print(f"Successfully updated tracking progress for {process_date.date()}")
+            else:
+                print(f"Warning: Failed to update tracking progress for {process_date.date()}")

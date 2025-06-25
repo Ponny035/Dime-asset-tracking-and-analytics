@@ -142,6 +142,15 @@ def process_asset_tracking(start_date, end_date, user_timezone, auth_mode="oauth
     )
 
     print("process asset log")
+    
+    # Get update tracker parameters
+    last_update_range = os.getenv("LAST_UPDATE_RANGE_NAME")
+    local_file = "last_update_information.json"
+    update_tracker_params = {
+        'update_range': last_update_range,
+        'local_file': local_file
+    } if last_update_range else None
+    
     process_asset_log(
         investment_log,
         spreadsheet_id,
@@ -149,6 +158,7 @@ def process_asset_tracking(start_date, end_date, user_timezone, auth_mode="oauth
         start_date=nyse_start_date,
         end_date=nyse_end_date,
         auth_mode=auth_mode,
+        update_tracker_params=update_tracker_params,
     )
 
     return None

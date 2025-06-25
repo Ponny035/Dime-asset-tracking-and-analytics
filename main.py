@@ -87,8 +87,8 @@ def main():
 
     print(f"Processing from {start_date} to {end_date}")
     # Call the functions with the specified dates
-    process_investment_transactions(start_date, end_date, user_timezone)
-    process_asset_tracking(start_date, end_date, user_timezone)
+    process_investment_transactions(start_date, end_date, user_timezone, auth_mode)
+    process_asset_tracking(start_date, end_date, user_timezone, auth_mode)
 
     # Update the last update time after successful processing (both sheets and local file)
     update_success = update_last_update_date(

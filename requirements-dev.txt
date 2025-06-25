@@ -1,0 +1,7 @@
+# Development Dependencies
+-r requirements.txt
+
+# Code Formatting and Linting
+flake8==7.3.0
+black==25.1.0
+autopep8==2.3.2

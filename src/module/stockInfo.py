@@ -24,15 +24,24 @@ def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
         "Sector": str(stock_fundament["Sector"]),
         "Industry": str(stock_fundament["Industry"]),
         "Country": str(stock_fundament["Country"]),
-        "Dividend": str(stock_fundament["Dividend TTM"])
+        "Dividend": str(stock_fundament["Dividend TTM"]),
     }
     return stock_basic_info
 
 
-def format_transaction(price: float, commission: float, tax: float, amount: float, share: float,
-                       stock_name: str = "AAPL", date: datetime = datetime.today(), portfolio: str = "Dime",
-                       transaction_type: Literal['BUY', 'SEL', 'DIV'] = 'BUY',
-                       status: str = "Done", note: str = "-") -> list:
+def format_transaction(
+    price: float,
+    commission: float,
+    tax: float,
+    amount: float,
+    share: float,
+    stock_name: str = "AAPL",
+    date: datetime = datetime.today(),
+    portfolio: str = "Dime",
+    transaction_type: Literal["BUY", "SEL", "DIV"] = "BUY",
+    status: str = "Done",
+    note: str = "-",
+) -> list:
     """
     Formats a transaction into a list with detailed information.
 
@@ -53,7 +62,7 @@ def format_transaction(price: float, commission: float, tax: float, amount: floa
         list: A list representing the formatted transaction with detailed information.
     """
     stock_info = get_stock_basic_info(stock_name)
-    has_dividend = stock_info['Dividend'] != '-'
+    has_dividend = stock_info["Dividend"] != "-"
     if transaction_type != "SEL":
         total_amount = round(amount + (commission + tax), 2)
     else:
@@ -62,14 +71,28 @@ def format_transaction(price: float, commission: float, tax: float, amount: floa
         share = -share
 
     transaction = [
-        date, portfolio, transaction_type, stock_name, stock_info['Sector'], stock_info['Industry'], has_dividend,
-        price, commission, tax, amount, total_amount, share, status, note
+        date,
+        portfolio,
+        transaction_type,
+        stock_name,
+        stock_info["Sector"],
+        stock_info["Industry"],
+        has_dividend,
+        price,
+        commission,
+        tax,
+        amount,
+        total_amount,
+        share,
+        status,
+        note,
     ]
     return transaction
 
 
-def get_last_available_trading_day_closing_price(stock_name: str, target_date: datetime,
-                                                 user_timezone: str = 'Asia/Bangkok') -> float | None:
+def get_last_available_trading_day_closing_price(
+    stock_name: str, target_date: datetime, user_timezone: str = "Asia/Bangkok"
+) -> float | None:
     """
     Retrieves the closing price of a stock on the specific trading date prior to or on the given date,
     adjusted for the user's timezone.
@@ -110,17 +133,19 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
     """
 
     # Create a NYSE calendar
-    nyse = mcal.get_calendar('NYSE')
+    nyse = mcal.get_calendar("NYSE")
 
     # Convert target_date to NYSE timezone
     user_tz = pytz.timezone(user_timezone)
     print(stock_name, target_date, user_timezone)
-    nyse_tz = pytz.timezone('America/New_York')
+    nyse_tz = pytz.timezone("America/New_York")
     target_date = user_tz.localize(target_date).astimezone(nyse_tz)
 
     # Adjust the date for trading day search
     adjusted_date = target_date
-    trading_days = nyse.valid_days(start_date='1900-01-01', end_date=adjusted_date.strftime('%Y-%m-%d'))
+    trading_days = nyse.valid_days(
+        start_date="1900-01-01", end_date=adjusted_date.strftime("%Y-%m-%d")
+    )
     if len(trading_days) == 0:
         print("No Trading day found")
         return None  # No trading days found up to this date
@@ -128,21 +153,29 @@ def get_last_available_trading_day_closing_price(stock_name: str, target_date: d
     last_trading_day = trading_days[-1].date()
     print(last_trading_day)
     # Convert last trading day back to user's timezone for the yfinance request
-    last_trading_day_nyse_tz = nyse_tz.localize(datetime.combine(last_trading_day, datetime.min.time()))
+    last_trading_day_nyse_tz = nyse_tz.localize(
+        datetime.combine(last_trading_day, datetime.min.time())
+    )
     last_trading_day_user_tz = last_trading_day_nyse_tz.astimezone(user_tz).date()
 
     # Fetch stock data
     try:
-        stock_data = yf.download(stock_name, start=last_trading_day_user_tz.strftime('%Y-%m-%d'),
-                                 end=(last_trading_day_user_tz + timedelta(days=1)).strftime('%Y-%m-%d'), auto_adjust=False)
+        stock_data = yf.download(
+            stock_name,
+            start=last_trading_day_user_tz.strftime("%Y-%m-%d"),
+            end=(last_trading_day_user_tz + timedelta(days=1)).strftime("%Y-%m-%d"),
+            auto_adjust=False,
+        )
         if not stock_data.empty:
-            return round(stock_data['Close'][stock_name].iloc[-1],2)
+            return round(stock_data["Close"][stock_name].iloc[-1], 2)
     except Exception as e:
         print(f"An error occurred while fetching the stock price: {e}")
         return None
 
 
-def check_valid_trading_date(target_date: datetime, user_timezone: str = 'Asia/Bangkok') -> bool:
+def check_valid_trading_date(
+    target_date: datetime, user_timezone: str = "Asia/Bangkok"
+) -> bool:
     """
     Check if a given date is a valid trading date in the NYSE calendar.
 
@@ -154,14 +187,16 @@ def check_valid_trading_date(target_date: datetime, user_timezone: str = 'Asia/B
         bool: True if the target_date is a valid trading date, False otherwise.
     """
     # Create a NYSE calendar
-    nyse_calendar = mcal.get_calendar('NYSE')
+    nyse_calendar = mcal.get_calendar("NYSE")
 
     # Convert target_date to NYSE timezone
     local_tz = pytz.timezone(user_timezone)
-    nyse_tz = pytz.timezone('America/New_York')
+    nyse_tz = pytz.timezone("America/New_York")
     local_target_date = local_tz.localize(target_date).astimezone(nyse_tz)
-    trading_days = nyse_calendar.valid_days(start_date=local_target_date.strftime('%Y-%m-%d'),
-                                            end_date=local_target_date.strftime('%Y-%m-%d'))
+    trading_days = nyse_calendar.valid_days(
+        start_date=local_target_date.strftime("%Y-%m-%d"),
+        end_date=local_target_date.strftime("%Y-%m-%d"),
+    )
 
     if len(trading_days) == 0:
         return False  # No trading days found up to this date

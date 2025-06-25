@@ -21,7 +21,7 @@ def connect_to_server(email_address: str, app_password: str) -> IMAP4_SSL | None
         imaplib.IMAP4_SSL: An IMAP4_SSL object connected to the email server.
     """
     try:
-        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(email_address, app_password)
     except Exception as e:
         print(f"Error connecting to the mail server: {e}")
@@ -29,8 +29,13 @@ def connect_to_server(email_address: str, app_password: str) -> IMAP4_SSL | None
     return mail
 
 
-def search_emails(mail: imaplib.IMAP4_SSL, start_date: datetime.datetime, end_date: datetime.datetime,
-                  subject_keyword: str, email_address: str) -> list:
+def search_emails(
+    mail: imaplib.IMAP4_SSL,
+    start_date: datetime.datetime,
+    end_date: datetime.datetime,
+    subject_keyword: str,
+    email_address: str,
+) -> list:
     """
     Searches for emails that match the given criteria.
 
@@ -44,8 +49,8 @@ def search_emails(mail: imaplib.IMAP4_SSL, start_date: datetime.datetime, end_da
     Returns:
         list: A list of email IDs that match the given criteria.
     """
-    since_date = start_date.strftime('%d-%b-%Y')
-    before_date = (end_date + datetime.timedelta(days=1)).strftime('%d-%b-%Y')
+    since_date = start_date.strftime("%d-%b-%Y")
+    before_date = (end_date + datetime.timedelta(days=1)).strftime("%d-%b-%Y")
     search_criteria = f'SINCE "{since_date}" BEFORE "{before_date}" SUBJECT "{subject_keyword}" FROM "{email_address}"'
     try:
         status, data = mail.search(None, search_criteria)
@@ -65,7 +70,7 @@ def decode_email_subject(email_message: email.message.Message) -> str:
     Returns:
         str: The decoded email subject as a string.
     """
-    subject, encoding = decode_header(email_message['Subject'])[0]
+    subject, encoding = decode_header(email_message["Subject"])[0]
     if encoding:
         subject = subject.decode(encoding)
     return subject
@@ -89,13 +94,13 @@ def extract_attachment_info(part: email.message.Message) -> str:
             date_str = filename_parts[4][:8]
             try:
                 # Parse the date string
-                date = datetime.datetime.strptime(date_str, '%d%m%Y').date()
+                date = datetime.datetime.strptime(date_str, "%d%m%Y").date()
                 # Construct the new filename
                 filename = f"{str(date)}_{filename_parts[4][8:-4]}_confirmationNote.pdf"
             except ValueError:
                 # Handle incorrect date formatting
                 print(f"Invalid date format in filename: {filename_parts[4]}")
-                filename = 'attachment_confirmationNote.pdf'
+                filename = "attachment_confirmationNote.pdf"
 
         if len(filename_parts) == 4 and len(filename_parts[3]) >= 8:
             # 2024-10 format
@@ -103,19 +108,21 @@ def extract_attachment_info(part: email.message.Message) -> str:
 
             try:
                 # Parse the date string
-                date = datetime.datetime.strptime(date_str, '%Y%m%d').date()
+                date = datetime.datetime.strptime(date_str, "%Y%m%d").date()
                 # Construct the new filename
-                filename = f"{str(date)}_{filename_parts[3][13:-4]}_confirmationNote.pdf"
+                filename = (
+                    f"{str(date)}_{filename_parts[3][13:-4]}_confirmationNote.pdf"
+                )
             except ValueError:
                 # Handle incorrect date formatting
                 print(f"Invalid date format in filename: {filename_parts[3]}")
-                filename = 'attachment_confirmationNote.pdf'
+                filename = "attachment_confirmationNote.pdf"
         else:
             # Fallback if filename doesn't have enough parts
             print(f"Filename doesn't match expected format: {part.get_filename()}")
-            filename = 'attachment_confirmationNote.pdf'
+            filename = "attachment_confirmationNote.pdf"
     else:
-        filename = 'attachment_confirmationNote.pdf'
+        filename = "attachment_confirmationNote.pdf"
 
     return filename
 
@@ -131,14 +138,20 @@ def save_attachment(part: email.message.Message, filename: str) -> None:
     Returns:
         None
     """
-    file_path = os.path.join('data', filename)
-    with open(file_path, 'wb') as f:
+    file_path = os.path.join("data", filename)
+    with open(file_path, "wb") as f:
         f.write(part.get_payload(decode=True))
     print(f"Downloaded attachment: {file_path}")
 
 
-def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, email_address: str,
-                 app_password: str, from_email: str, subject_keyword: str) -> list:
+def query_emails(
+    start_date: datetime.datetime,
+    end_date: datetime.datetime,
+    email_address: str,
+    app_password: str,
+    from_email: str,
+    subject_keyword: str,
+) -> list:
     """
     Searches for and processes emails that match the given criteria.
 
@@ -158,9 +171,11 @@ def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, ema
         print("Connecting to mail server.")
         with connect_to_server(email_address, app_password) as mail:
             print("Mail server connected.")
-            mail.select('inbox')
+            mail.select("inbox")
             print("Searching E-mail.")
-            matching_emails = search_emails(mail, start_date, end_date, subject_keyword, from_email)
+            matching_emails = search_emails(
+                mail, start_date, end_date, subject_keyword, from_email
+            )
 
             if len(matching_emails) > 1:
                 print(f"Found {len(matching_emails)} E-mails.")
@@ -171,10 +186,14 @@ def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, ema
 
             for num in matching_emails:
                 try:
-                    status, email_data = mail.fetch(num, '(RFC822)')
+                    status, email_data = mail.fetch(num, "(RFC822)")
 
                     # Ensure email_data exists and is properly structured
-                    if len(email_data) > 0 and isinstance(email_data[0], tuple) and len(email_data[0]) > 1:
+                    if (
+                        len(email_data) > 0
+                        and isinstance(email_data[0], tuple)
+                        and len(email_data[0]) > 1
+                    ):
 
                         # Parse the email
                         email_message = email.message_from_bytes(email_data[0][1])
@@ -185,7 +204,7 @@ def query_emails(start_date: datetime.datetime, end_date: datetime.datetime, ema
                         # Walk through email parts for attachments
                         if email_message.is_multipart():
                             for part in email_message.walk():
-                                if part.get_content_disposition() == 'attachment':
+                                if part.get_content_disposition() == "attachment":
                                     filename = extract_attachment_info(part)
                                     print(f"Found attachment: {filename}")
                                     save_attachment(part, filename)

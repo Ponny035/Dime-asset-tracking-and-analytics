@@ -16,7 +16,7 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
     """
 
     # Open the locked PDF file with the given password
-    with open(pdf_file_path, 'rb') as pdf_file:
+    with open(pdf_file_path, "rb") as pdf_file:
         # Create a PDF reader object
         pdf_reader = pypdf.PdfReader(pdf_file, password=password)
 
@@ -35,7 +35,7 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
             # Get the date from the 15th line
             if date is None:
                 date_str = lines[20][0:10]
-                date = datetime.datetime.strptime(date_str, '%d/%m/%Y').date()
+                date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
 
             # Create a set of stock exchanges
             us_stock_exchanges = {"[XNYS]", "[XNAS]", "[ARCX]"}
@@ -63,8 +63,12 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
                         if commission_and_tax != 0:
                             commission = round((amount * (0.15 / 100)), 2)
                             calculate_withholding_tax = round(commission * (7 / 100), 2)
-                            if (calculate_withholding_tax + commission) != commission_and_tax:
-                                calculate_withholding_tax = commission_and_tax - commission
+                            if (
+                                calculate_withholding_tax + commission
+                            ) != commission_and_tax:
+                                calculate_withholding_tax = (
+                                    commission_and_tax - commission
+                                )
 
                         # Get the withholding tax from the next line
                         pdf_withholding_tax = lines[line_num + 3]
@@ -76,7 +80,16 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
 
                         # Add the transaction to the list of transactions
                         transactions.append(
-                            [transaction_type, stock_name, share, price, commission, withholding_tax, amount])
+                            [
+                                transaction_type,
+                                stock_name,
+                                share,
+                                price,
+                                commission,
+                                withholding_tax,
+                                amount,
+                            ]
+                        )
 
         # Return the date and transactions as a tuple
         return date, transactions

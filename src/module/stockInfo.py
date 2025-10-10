@@ -29,7 +29,7 @@ def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     return stock_basic_info
 
 
-def format_transaction(
+def format_stock_transaction(
     price: float,
     commission: float,
     tax: float,
@@ -88,6 +88,75 @@ def format_transaction(
         note,
     ]
     return transaction
+
+
+def format_option_transaction(
+    price: float,
+    commission: float,
+    tax: float,
+    amount: float,
+    strike: float,
+    contract: float,
+    date: datetime = datetime.today(),
+    expiry: datetime = datetime.today(),
+    transaction_type: Literal["BUY", "SEL", "DIV"] = "BUY",
+    right: Literal["PUT", "CALL"] = "CALL",
+    stock_name: str = "AAPL",
+    portfolio: str = "Dime",
+    status: str = "Done",
+    note: str = "-",
+) -> list:
+    """
+    Formats a transaction into a list with detailed information.
+
+    Args:
+        price (float): The price of the transaction.
+        commission (float): The commission for the transaction.
+        tax (float): The tax for the transaction.
+        amount (float): The total amount of the transaction.
+        strike (float): The strike price of option involved in the transaction.
+        contract (float): The number of contract. (1 contract is equal to 100 shares)
+        date (datetime): The date of the transaction. Default is the current date and time.
+        expiry (datetime): The expriation date of the option.
+        transaction_type (Literal['BUY', 'SEL', 'DIV']): The type of the transaction. Default is 'BUY'.
+        right (Literal['PUT', 'CALL']): The type of the option. Default is 'CALL'.
+        stock_name (str): The name of the stock. Default is "AAPL" (Apple Inc.).
+        portfolio (str): The name of the portfolio. Default is "Dime".
+        status (str): The status of the transaction. Default is "Done".
+        note (str): The note of the transaction. Default is "-".
+
+    Returns:
+        list: A list representing the formatted transaction with detailed information.
+    """
+    stock_info = get_stock_basic_info(stock_name)
+    if transaction_type != "SEL":
+        total_amount = round(amount + (commission + tax), 2)
+    else:
+        total_amount = round(amount - (commission + tax), 2) * -1
+        amount = -amount
+        contract = -contract
+
+    transaction = [
+        date,
+        portfolio,
+        transaction_type,
+        stock_name,
+        stock_info["Sector"],
+        stock_info["Industry"],
+        right,
+        strike,
+        expiry,
+        contract,
+        price,
+        commission,
+        tax,
+        amount,
+        total_amount,
+        status,
+        note,
+    ]
+    return transaction
+
 
 
 def get_last_available_trading_day_closing_price(

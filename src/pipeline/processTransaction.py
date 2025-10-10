@@ -8,7 +8,7 @@ from src.module.PDFProcessing import process_pdf
 from src.module.assetTracking import query_investment_log, process_asset_log
 from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.queryEmailRecord import query_emails
-from src.module.stockInfo import format_transaction
+from src.module.stockInfo import format_stock_transaction, format_option_transaction
 
 
 def process_investment_transactions(start_date, end_date, user_timezone="Asia/Bangkok", auth_mode="oauth"):
@@ -32,7 +32,8 @@ def process_investment_transactions(start_date, end_date, user_timezone="Asia/Ba
     app_password = os.getenv("APP_PASSWORD")
     pdf_password = os.getenv("PDF_PASSWORD")
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
-    range_name = os.getenv("INVEST_LOG_RANGE_NAME")
+    stock_range_name = os.getenv("US_STOCK_INVEST_LOG_RANGE_NAME")
+    option_range_name = os.getenv("US_STOCK_OPTION_INVEST_LOG_RANGE_NAME")
     from_email = "no-reply@dime.co.th"
     subject_keyword = "Confirmation Note"
 
@@ -61,8 +62,8 @@ def process_investment_transactions(start_date, end_date, user_timezone="Asia/Ba
 
     date_and_transactions = []
     for pdf_path in pdf_path_list:
-        date, transactions = process_pdf(pdf_path, pdf_password)
-        date_and_transactions.append([date, transactions])
+        date, transactions, option_transactions = process_pdf(pdf_path, pdf_password)
+        date_and_transactions.append([date, transactions, option_transactions])
 
     for transactions in date_and_transactions:
         date = transactions[0].strftime("%Y-%m-%d")
@@ -74,7 +75,7 @@ def process_investment_transactions(start_date, end_date, user_timezone="Asia/Ba
             commission = transaction[4]
             tax = transaction[5]
             amount = transaction[6]
-            formated_transaction = format_transaction(
+            formated_stock_transaction = format_stock_transaction(
                 price,
                 commission,
                 tax,
@@ -87,11 +88,42 @@ def process_investment_transactions(start_date, end_date, user_timezone="Asia/Ba
                 "Done",
                 "-",
             )
-            print(formated_transaction)
+            print(formated_stock_transaction)
             export_invest_log_to_google_sheet(
-                spreadsheet_id, range_name, "USER_ENTERED", [formated_transaction], auth_mode
+                spreadsheet_id, stock_range_name, "USER_ENTERED", [formated_stock_transaction], auth_mode
             )
 
+        for option_transactions in transactions[2]:
+            transaction_type = option_transactions[0]
+            stock_name = option_transactions[1]
+            right = option_transactions[2]
+            strike = option_transactions[3]
+            expiry = option_transactions[4].strftime("%Y-%m-%d")
+            contract = option_transactions[5]
+            price = option_transactions[6]
+            commission = option_transactions[7]
+            withholding_tax = option_transactions[8]
+            amount = option_transactions[9]          
+            formated_option_transaction = format_option_transaction(
+                price,
+                commission,
+                withholding_tax,
+                amount,
+                strike,
+                contract,
+                date,
+                expiry,
+                transaction_type,
+                right,
+                stock_name,
+                "Dime",
+                "Done",
+                "-"
+            )
+            print(formated_option_transaction)
+            export_invest_log_to_google_sheet(
+                spreadsheet_id, option_range_name, "USER_ENTERED", [formated_option_transaction], auth_mode
+            )
     return None
 
 
@@ -111,8 +143,8 @@ def process_asset_tracking(start_date, end_date, user_timezone, auth_mode="oauth
     # load the variables from .env
     load_dotenv()
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
-    range_name = os.getenv("INVEST_LOG_RANGE_NAME")
-    asset_track_range_name = os.getenv("ASSET_TRACKING_RANGE_NAME")
+    stock_range_name = os.getenv("US_STOCK_INVEST_LOG_RANGE_NAME")
+    asset_track_stock_range_name = os.getenv("ASSET_TRACKING_STOCK_RANGE_NAME")
 
     temp_time = time(8, 30, 00)
 
@@ -135,7 +167,7 @@ def process_asset_tracking(start_date, end_date, user_timezone, auth_mode="oauth
 
     investment_log = query_investment_log(
         spreadsheet_id=spreadsheet_id,
-        range_name=range_name,
+        range_name=stock_range_name,
         start_date=nyse_start_date,
         end_date=nyse_end_date,
         auth_mode=auth_mode,
@@ -154,7 +186,7 @@ def process_asset_tracking(start_date, end_date, user_timezone, auth_mode="oauth
     process_asset_log(
         investment_log,
         spreadsheet_id,
-        asset_track_range_name,
+        asset_track_stock_range_name,
         start_date=nyse_start_date,
         end_date=nyse_end_date,
         auth_mode=auth_mode,

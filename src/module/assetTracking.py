@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
-from src.module.stockInfo import get_last_available_trading_day_closing_price, check_valid_trading_date
+from src.module.stockInfo import get_last_available_trading_day_closing_price, check_valid_trading_date,get_bulk_available_trading_day_closing_price
 from src.util.auth import authenticate
 
 
@@ -74,6 +74,7 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
     for process_date in date_range:
         print("Processing date:", process_date)
         nyse_temp_datetime = datetime.combine(process_date, temp_time)
+        nyse_temp_datetime_str = nyse_temp_datetime.strftime('%Y-%m-%d')
         filtered_investment_log = investment_log[investment_log['Date'] == pd.to_datetime(process_date)]
         if filtered_investment_log.empty:
             print("There isn't any trading data for this date yet.")
@@ -132,22 +133,17 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
                                       'Total Amount (USD)']].drop_duplicates(
                     subset=['Port', 'Product Name', 'Sector', 'Industry'])
 
-            stock_triggers = final_df['Product Name'].values
-            closing_prices = []
+            stock_triggers = final_df['Product Name'].values.tolist()
+            closing_prices = get_bulk_available_trading_day_closing_price(stock_triggers,start_date=nyse_temp_datetime,end_date=nyse_temp_datetime,user_timezone='America/New_York',fill='ffill')
             performances = []
             total_performances = []
             valuations = []
             for trigger in stock_triggers:
-                print("Fetching closing price of", trigger)
-                closing_price = get_last_available_trading_day_closing_price(stock_name=trigger,
-                                                                             target_date=nyse_temp_datetime,
-                                                                             user_timezone='America/New_York')
-                closing_prices.append(closing_price)
                 temp_asset_log = final_df.loc[final_df["Product Name"] == trigger].iloc[0]
                 share, amount_usd, total_amount_usd = temp_asset_log['Share'], temp_asset_log['Amount (USD)'], \
                     temp_asset_log['Total Amount (USD)']
                 if share != 0:
-                    valuation = closing_price * share
+                    valuation = closing_prices.loc[nyse_temp_datetime_str, trigger] * share
                     valuations.append(valuation)
                     performances.append((valuation - amount_usd) / amount_usd)
                     total_performances.append((valuation - total_amount_usd) / total_amount_usd)
@@ -156,7 +152,8 @@ def process_asset_log(investment_log, spreadsheet_id: str, asset_log_range_name:
                     performances.append(0)
                     total_performances.append(0)
             final_df.insert(1, 'Is Market Open', is_market_open, True)
-            final_df.insert(9, 'Closing Stock Price', closing_prices, True)
+            final_df.insert(9, 'Closing Stock Price', 
+                final_df['Product Name'].map(closing_prices.loc[nyse_temp_datetime_str]), True)
             final_df.insert(10, 'Valuation', valuations, True)
             final_df.insert(11, 'Performance', performances, True)
             final_df.insert(12, 'Total Performance', total_performances, True)

@@ -236,9 +236,9 @@ def get_bulk_available_trading_day_closing_price(
                 
                 # Apply fill strategy
                 if fill == 'ffill':
-                    close_data = close_data.fillna(method='ffill')
+                    close_data = close_data.ffill()
                 elif fill == 'bfill':
-                    close_data = close_data.fillna(method='bfill')
+                    close_data = close_data.bfill()
                 elif fill == 'zero':
                     close_data = close_data.fillna(0)
                 elif fill == 'nan':

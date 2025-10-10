@@ -181,7 +181,6 @@ def update_last_update_date(
     Returns:
         bool: True if at least one update succeeded, False if both failed
     """
-    print(sheets_range)
     sheets_success = update_last_update_in_sheets(
         spreadsheet_id, sheets_range, update_date, auth_mode
     )

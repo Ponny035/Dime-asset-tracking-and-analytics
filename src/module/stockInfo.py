@@ -172,6 +172,8 @@ def get_bulk_available_trading_day_closing_price(
         - Converts dates from user's timezone to NYSE timezone for trading day calculations.
         - Fetches closing prices for all valid trading days in the range using yfinance.
         - If fill is specified, adds non-trading days and applies the chosen fill strategy.
+        - For 'ffill', automatically fetches data from the last trading day before start_date
+          to ensure no NaN values at the beginning.
         - Returns None if no trading days are found or data is unavailable.
 
     Example:
@@ -206,15 +208,35 @@ def get_bulk_available_trading_day_closing_price(
     if len(trading_days) == 0:
         return None
 
-    last_trading_day = trading_days[-1].date()
-    last_trading_day_nyse = nyse_tz.localize(datetime.combine(last_trading_day, datetime.min.time()))
-    last_trading_day_user = last_trading_day_nyse.astimezone(user_tz).date()
-
     try:
+        # Determine fetch start based on fill strategy
+        if fill == 'ffill':
+            # Find last trading day before start_date using NYSE calendar
+            # Look back up to 30 days to handle long weekends/holidays
+            lookback_start = (start_date.date() - timedelta(days=30)).strftime('%Y-%m-%d')
+            lookback_end = (start_date.date() - timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            trading_days_before = nyse.valid_days(
+                start_date=lookback_start,
+                end_date=lookback_end,
+                tz=nyse_tz
+            )
+            
+            if len(trading_days_before) > 0:
+                # Fetch from the last trading day before start_date
+                last_trading_day = trading_days_before[-1].date()
+                yf_start = last_trading_day.strftime('%Y-%m-%d')
+            else:
+                # Fallback: no trading days found in lookback period
+                yf_start = start_date.strftime('%Y-%m-%d')
+        else:
+            yf_start = start_date.strftime('%Y-%m-%d')
+        
         # yfinance end date is exclusive, so add one day
-        yf_start = start_date.strftime('%Y-%m-%d')
-        yf_end = (last_trading_day_user + timedelta(days=1)).strftime('%Y-%m-%d')
-        data = yf.download(ticker, start=yf_start, end=yf_end)
+        yf_end = (end_date.date() + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Download data from yfinance
+        data = yf.download(ticker, start=yf_start, end=yf_end, progress=False)
         
         if not data.empty:
             # Extract closing prices (handle both single and multi-ticker cases)
@@ -222,14 +244,21 @@ def get_bulk_available_trading_day_closing_price(
                 close_data = data['Close'].to_frame(ticker[0])
             else:
                 close_data = data['Close']
-            
             if fill is not None:
-                # Create complete date range
-                full_range = pd.date_range(
-                    start=start_date.date(), 
-                    end=end_date.date(), 
-                    freq='D'
-                )
+                # Create complete date range INCLUDING any historical data we fetched
+                if fill == 'ffill' and yf_start < start_date.strftime('%Y-%m-%d'):
+                    # Extend range to include the historical start date
+                    full_range = pd.date_range(
+                        start=yf_start,  # Start from where we fetched
+                        end=end_date.date(), 
+                        freq='D'
+                    )
+                else:
+                    full_range = pd.date_range(
+                        start=start_date.date(), 
+                        end=end_date.date(), 
+                        freq='D'
+                    )
                 
                 # Reindex to include all calendar days
                 close_data = close_data.reindex(full_range)
@@ -242,7 +271,18 @@ def get_bulk_available_trading_day_closing_price(
                 elif fill == 'zero':
                     close_data = close_data.fillna(0)
                 elif fill == 'nan':
-                    pass  # Already has NaN for missing days
+                    pass
+                
+                # Trim to only the requested date range
+                requested_range = pd.date_range(
+                    start=start_date.date(),
+                    end=end_date.date(),
+                    freq='D'
+                )
+                close_data = close_data.loc[requested_range]
+            
+            # Ensure index is date type for consistent access
+            close_data.index = pd.to_datetime(close_data.index).date
             
             return close_data.round(2)
             

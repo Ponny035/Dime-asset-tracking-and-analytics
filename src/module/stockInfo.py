@@ -381,9 +381,6 @@ def get_bulk_available_trading_day_closing_price(
                 )
                 close_data = close_data.loc[requested_range]
             
-            # Ensure index is date type for consistent access
-            close_data.index = pd.to_datetime(close_data.index).date
-            
             return close_data.round(2)
             
     except Exception as e:

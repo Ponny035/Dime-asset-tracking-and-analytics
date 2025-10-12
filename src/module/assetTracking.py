@@ -7,7 +7,7 @@ from googleapiclient.errors import HttpError
 
 from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.stockInfo import (
-    get_last_available_trading_day_closing_price,
+    check_valid_trading_date,
     get_bulk_available_trading_day_closing_price,
 )
 from src.module.updateTracker import update_last_update_date

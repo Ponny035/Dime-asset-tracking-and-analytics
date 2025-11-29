@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, time
 
 import numpy as np
 import pandas as pd
+from typing import Literal
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -289,3 +290,33 @@ def process_asset_log(
                 print(f"Successfully updated tracking progress for {process_date.date()}")
             else:
                 print(f"Warning: Failed to update tracking progress for {process_date.date()}")
+
+
+def process_asset_performance(
+    spreadsheet_id: str,
+    asset_log_range_name: str,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    auth_mode: str = "oauth",
+    update_tracker_params: dict = None,
+    mode:  Literal["Amount", "Valuation", "PCT", "PCT change"] = "Amount",
+):
+    """
+    Process asset log data by updating asset tracking information and importing it into a Google Sheet.
+
+    Args:
+        investment_log (pandas.DataFrame): DataFrame containing investment log data.
+        spreadsheet_id (str): The ID of the Google Sheet.
+        asset_log_range_name (str): The range of cells to update in the Google Sheet for asset tracking.
+        start_date (datetime.date): The start date of the date range being processed.
+        end_date (datetime.date): The end date of the date range being processed.
+        auth_mode (str): Authentication mode - "oauth" or "service_account".
+        update_tracker_params (dict): Parameters for updating progress tracker. Should contain:
+            - 'update_range': Range for last update tracking
+            - 'local_file': Local file path for tracking
+            If None, progress tracking is skipped.
+
+    Returns:
+        None
+    """
+    return 0

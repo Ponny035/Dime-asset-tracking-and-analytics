@@ -2,13 +2,14 @@ from datetime import datetime, timedelta, time
 
 import numpy as np
 import pandas as pd
+from typing import Literal
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.stockInfo import (
-    get_last_available_trading_day_closing_price,
     check_valid_trading_date,
+    get_bulk_available_trading_day_closing_price,
 )
 from src.module.updateTracker import update_last_update_date
 from src.util.auth import authenticate
@@ -119,6 +120,7 @@ def process_asset_log(
     for process_date in date_range:
         print("Processing date:", process_date)
         nyse_temp_datetime = datetime.combine(process_date, temp_time)
+        nyse_temp_datetime_str = nyse_temp_datetime.strftime('%Y-%m-%d')
         filtered_investment_log = investment_log[
             investment_log["Date"] == pd.to_datetime(process_date)
         ]
@@ -236,29 +238,17 @@ def process_asset_log(
                     ]
                 ].drop_duplicates(subset=["Port", "Product Name", "Sector", "Industry"])
 
-            stock_triggers = final_df["Product Name"].values
-            closing_prices = []
+            stock_triggers = final_df['Product Name'].values.tolist()
+            closing_prices = get_bulk_available_trading_day_closing_price(stock_triggers,start_date=nyse_temp_datetime,end_date=nyse_temp_datetime,user_timezone='America/New_York',fill='ffill')
             performances = []
             total_performances = []
             valuations = []
             for trigger in stock_triggers:
-                print("Fetching closing price of", trigger)
-                closing_price = get_last_available_trading_day_closing_price(
-                    stock_name=trigger,
-                    target_date=nyse_temp_datetime,
-                    user_timezone="America/New_York",
-                )
-                closing_prices.append(closing_price)
-                temp_asset_log = final_df.loc[final_df["Product Name"] == trigger].iloc[
-                    0
-                ]
-                share, amount_usd, total_amount_usd = (
-                    temp_asset_log["Share"],
-                    temp_asset_log["Amount (USD)"],
-                    temp_asset_log["Total Amount (USD)"],
-                )
+                temp_asset_log = final_df.loc[final_df["Product Name"] == trigger].iloc[0]
+                share, amount_usd, total_amount_usd = temp_asset_log['Share'], temp_asset_log['Amount (USD)'], \
+                    temp_asset_log['Total Amount (USD)']
                 if share != 0:
-                    valuation = closing_price * share
+                    valuation = closing_prices.loc[nyse_temp_datetime_str, trigger] * share
                     valuations.append(valuation)
                     performances.append((valuation - amount_usd) / amount_usd)
                     total_performances.append(
@@ -268,11 +258,11 @@ def process_asset_log(
                     valuations.append(0)
                     performances.append(0)
                     total_performances.append(0)
-            final_df.insert(1, "Is Market Open", is_market_open, True)
-            final_df.insert(9, "Closing Stock Price", closing_prices, True)
-            final_df.insert(10, "Valuation", valuations, True)
-            final_df.insert(11, "Performance", performances, True)
-            final_df.insert(12, "Total Performance", total_performances, True)
+            final_df.insert(1, 'Is Market Open', is_market_open, True)
+            final_df.insert(9, 'Closing Stock Price', final_df['Product Name'].map(closing_prices.loc[nyse_temp_datetime_str]), True)
+            final_df.insert(10, 'Valuation', valuations, True)
+            final_df.insert(11, 'Performance', performances, True)
+            final_df.insert(12, 'Total Performance', total_performances, True)
 
         else:
             final_df = asset_log
@@ -300,3 +290,33 @@ def process_asset_log(
                 print(f"Successfully updated tracking progress for {process_date.date()}")
             else:
                 print(f"Warning: Failed to update tracking progress for {process_date.date()}")
+
+
+def process_asset_performance(
+    spreadsheet_id: str,
+    asset_log_range_name: str,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    auth_mode: str = "oauth",
+    update_tracker_params: dict = None,
+    mode:  Literal["Amount", "Valuation", "PCT", "PCT change"] = "Amount",
+):
+    """
+    Process asset log data by updating asset tracking information and importing it into a Google Sheet.
+
+    Args:
+        investment_log (pandas.DataFrame): DataFrame containing investment log data.
+        spreadsheet_id (str): The ID of the Google Sheet.
+        asset_log_range_name (str): The range of cells to update in the Google Sheet for asset tracking.
+        start_date (datetime.date): The start date of the date range being processed.
+        end_date (datetime.date): The end date of the date range being processed.
+        auth_mode (str): Authentication mode - "oauth" or "service_account".
+        update_tracker_params (dict): Parameters for updating progress tracker. Should contain:
+            - 'update_range': Range for last update tracking
+            - 'local_file': Local file path for tracking
+            If None, progress tracking is skipped.
+
+    Returns:
+        None
+    """
+    return 0

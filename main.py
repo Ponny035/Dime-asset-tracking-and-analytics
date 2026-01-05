@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Load environment variables
 load_dotenv()
-client_id = os.getenv("BOT_API_CLIENT_ID")
+token_id = os.getenv("BOT_API_TOKEN_ID")
 spreadsheet_id = os.getenv("SPREADSHEET_ID")
 last_update_range = os.getenv("LAST_UPDATE_RANGE_NAME")
 auth_mode = os.getenv("AUTH_MODE", "oauth")
@@ -62,7 +62,7 @@ def main():
 
     # Update holidays information
     print("Updating holidays information")
-    update_financial_institutions_holidays(client_id)
+    update_financial_institutions_holidays(token_id)
 
     # Check if today is a working day (skip if manual mode)
     if not args.manual and not is_working_day(today):

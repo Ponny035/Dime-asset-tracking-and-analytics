@@ -17,25 +17,22 @@ logging.basicConfig(
 
 
 def get_financial_institutions_holidays_api(
-    client_id: str, retries: int = 3, delay_sec: int = 2
+    token_id: str, retries: int = 3, delay_sec: int = 2
 ) -> Optional[dict]:
     """
     Fetch financial institution holidays from the BOT public API with retries.
 
     Args:
-        client_id (str): The IBM Client ID for API authentication.
+        token_id (str): The token id for API authentication.
         retries (int): Number of retry attempts on failure.
         delay_sec (int): Delay in seconds between retries.
 
     Returns:
         dict | None: Parsed API response or None if the request fails.
     """
-    url = (
-        "https://apigw1.bot.or.th/bot/public/"
-        "financial-institutions-holidays/?year=2025"
-    )
-    headers = {"X-IBM-Client-Id": client_id}
-
+    url = "https://gateway.api.bot.or.th/financial-institutions-holidays/"
+    
+    headers = {'Authorization': token_id,}
     for attempt in range(1, retries + 1):
         try:
             response = requests.get(url, headers=headers, timeout=10)
@@ -51,12 +48,12 @@ def get_financial_institutions_holidays_api(
                 return None
 
 
-def update_financial_institutions_holidays(client_id: str) -> bool:
+def update_financial_institutions_holidays(token_id: str) -> bool:
     """
     Update local holiday JSON if not already updated today.
 
     Args:
-        client_id (str): The IBM Client ID for API authentication.
+        token_id (str): The token id for API authentication.
 
     Returns:
         bool: True if update was successful or not needed, False if API failed.
@@ -84,7 +81,7 @@ def update_financial_institutions_holidays(client_id: str) -> bool:
             )
 
     # Step 2: Fetch new data from API
-    api_result = get_financial_institutions_holidays_api(client_id)
+    api_result = get_financial_institutions_holidays_api(token_id)
     if api_result is None:
         return False
 

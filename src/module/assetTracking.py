@@ -298,8 +298,8 @@ def process_asset_performance(
     start_date: datetime.date,
     end_date: datetime.date,
     auth_mode: str = "oauth",
-    update_tracker_params: dict = None,
     mode:  Literal["Amount", "Valuation", "PCT", "PCT change"] = "Amount",
+    
 ):
     """
     Process asset log data by updating asset tracking information and importing it into a Google Sheet.
@@ -311,12 +311,10 @@ def process_asset_performance(
         start_date (datetime.date): The start date of the date range being processed.
         end_date (datetime.date): The end date of the date range being processed.
         auth_mode (str): Authentication mode - "oauth" or "service_account".
-        update_tracker_params (dict): Parameters for updating progress tracker. Should contain:
-            - 'update_range': Range for last update tracking
-            - 'local_file': Local file path for tracking
-            If None, progress tracking is skipped.
 
     Returns:
         None
     """
-    return 0
+
+    a = query_investment_log(spreadsheet_id,asset_log_range_name,start_date,end_date,auth_mode)
+    return a

@@ -5,7 +5,7 @@ import pytz
 from dotenv import load_dotenv
 
 from src.module.PDFProcessing import process_pdf
-from src.module.assetTracking import query_investment_log, process_asset_log
+from src.module.assetTracking import query_investment_log, process_asset_log, process_asset_performance
 from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.queryEmailRecord import query_emails
 from src.module.stockInfo import format_stock_transaction, format_option_transaction

@@ -118,6 +118,7 @@ def process_asset_log(
     asset_log = None
     final_df = None
     for process_date in date_range:
+        closing_prices = []
         print("Processing date:", process_date)
         nyse_temp_datetime = datetime.combine(process_date, temp_time)
         filtered_investment_log = investment_log[
@@ -275,6 +276,9 @@ def process_asset_log(
             final_df.values.tolist(),
             auth_mode,
         )
+
+        process_asset_performance( spreadsheet_id, asset_log_range_name, "Copy of Performance Tracking Stock Amount", start_date, end_date, auth_mode = "oauth",mode = "Amount")
+
         
         # Update progress tracker after processing each date
         if update_tracker_params:
@@ -290,10 +294,12 @@ def process_asset_log(
             else:
                 print(f"Warning: Failed to update tracking progress for {process_date.date()}")
 
-
 def process_asset_performance(
     spreadsheet_id: str,
     asset_log_range_name: str,
+    target_update_range_name: str,
+    # asset_valuation: dataframe,
+    # daily_closing_price: dataframe,
     start_date: datetime.date,
     end_date: datetime.date,
     auth_mode: str = "oauth",

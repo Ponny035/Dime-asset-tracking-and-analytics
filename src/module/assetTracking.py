@@ -65,6 +65,7 @@ def query_investment_log(
 
 
 def process_asset_log(
+    is_dry_run,
     investment_log,
     spreadsheet_id: str,
     asset_log_range_name: str,
@@ -270,26 +271,35 @@ def process_asset_log(
             final_df["Is Market Open"] = False
         final_df["Date"] = process_date.strftime("%Y-%m-%d")
         print(final_df)
-        export_invest_log_to_google_sheet(
-            spreadsheet_id,
-            asset_log_range_name,
-            "USER_ENTERED",
-            final_df.values.tolist(),
-            auth_mode,
-        )
 
-        process_asset_performance( spreadsheet_id, asset_log_range_name, "Copy of Performance Tracking Stock Amount", start_date, end_date, auth_mode = "oauth",mode = "Amount")
+        if not is_dry_run:
+            export_invest_log_to_google_sheet(
+                spreadsheet_id,
+                asset_log_range_name,
+                "USER_ENTERED",
+                final_df.values.tolist(),
+                auth_mode,
+            )
+        else:
+                print("update data to google sheet")
+
+        # process_asset_performance( spreadsheet_id, asset_log_range_name, "Copy of Performance Tracking Stock Amount", start_date, end_date, auth_mode = "oauth",mode = "Amount")
 
         
         # Update progress tracker after processing each date
+
         if update_tracker_params:
-            update_success = update_last_update_date(
-                spreadsheet_id,
-                update_tracker_params['update_range'],
-                update_tracker_params['local_file'],
-                process_date.date(),
-                auth_mode
-            )
+            update_success = False
+            if not is_dry_run:
+                update_success = update_last_update_date(
+                    spreadsheet_id,
+                    update_tracker_params['update_range'],
+                    update_tracker_params['local_file'],
+                    process_date.date(),
+                    auth_mode
+                )
+            else:
+                print("Dry run Successfully")
             if update_success:
                 print(f"Successfully updated tracking progress for {process_date.date()}")
             else:

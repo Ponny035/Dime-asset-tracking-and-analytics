@@ -11,7 +11,7 @@ from src.module.queryEmailRecord import query_emails
 from src.module.stockInfo import format_stock_transaction, format_option_transaction
 
 
-def process_investment_transactions(start_date, end_date, user_timezone="Asia/Bangkok", auth_mode="oauth"):
+def process_investment_transactions(is_dry_run,start_date, end_date, user_timezone="Asia/Bangkok", auth_mode="oauth"):
     """
     Process investment transactions by reading emails, extracting PDF attachments, parsing transaction details,
     and importing them into a Google Sheet.
@@ -89,9 +89,12 @@ def process_investment_transactions(start_date, end_date, user_timezone="Asia/Ba
                 "-",
             )
             print(formated_stock_transaction)
-            export_invest_log_to_google_sheet(
-                spreadsheet_id, stock_range_name, "USER_ENTERED", [formated_stock_transaction], auth_mode
-            )
+            if not is_dry_run:
+                export_invest_log_to_google_sheet(
+                    spreadsheet_id, stock_range_name, "USER_ENTERED", [formated_stock_transaction], auth_mode
+                )
+            else:
+                print("update data to google sheet")
 
         for option_transactions in transactions[2]:
             transaction_type = option_transactions[0]
@@ -121,13 +124,16 @@ def process_investment_transactions(start_date, end_date, user_timezone="Asia/Ba
                 "-"
             )
             print(formated_option_transaction)
-            export_invest_log_to_google_sheet(
-                spreadsheet_id, option_range_name, "USER_ENTERED", [formated_option_transaction], auth_mode
-            )
+            if not is_dry_run:
+                export_invest_log_to_google_sheet(
+                    spreadsheet_id, option_range_name, "USER_ENTERED", [formated_option_transaction], auth_mode
+                )
+            else:
+                print("update data to google sheet")
     return None
 
 
-def process_asset_tracking(start_date, end_date, user_timezone, auth_mode="oauth"):
+def process_asset_tracking(is_dry_run, start_date, end_date, user_timezone, auth_mode="oauth"):
     """
     Process asset logs by querying investment logs and updating asset tracking table according to each investment.
 
@@ -184,6 +190,7 @@ def process_asset_tracking(start_date, end_date, user_timezone, auth_mode="oauth
     } if last_update_range else None
     
     process_asset_log(
+        is_dry_run,
         investment_log,
         spreadsheet_id,
         asset_track_stock_range_name,

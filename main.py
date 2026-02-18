@@ -55,7 +55,17 @@ def main():
         action="store_true",
         help="Run in manual mode (bypass working day check)",
     )
+    parser.add_argument(
+        "-d",
+        "--dry-run",
+        action="store_true",
+        help="Simulate execution without writing to sheets",
+    )
     args = parser.parse_args()
+
+    if args.dry_run:
+        logging.info("Simulate execution without writing")
+
 
     # Get today's date
     today = dt.datetime.now().date()
@@ -87,17 +97,20 @@ def main():
 
     print(f"Processing from {start_date} to {end_date}")
     # Call the functions with the specified dates
-    process_investment_transactions(start_date, end_date, user_timezone, auth_mode)
-    process_asset_tracking(start_date, end_date, user_timezone, auth_mode)
+    process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode)
+    process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
 
     # Update the last update time after successful processing (both sheets and local file)
-    update_success = update_last_update_date(
-        spreadsheet_id, last_update_range, file_name, today, auth_mode
-    )
-    if not update_success:
-        logging.error(
-            "Failed to update last update date in both Google Sheets and local file"
+    if args.dry_run:
+        update_success = update_last_update_date(
+            spreadsheet_id, last_update_range, file_name, today, auth_mode
         )
+        if not update_success:
+            logging.error(
+                "Failed to update last update date in both Google Sheets and local file"
+            )
+    else:
+        logging.warning("Failed to update last update date in Google Sheets due to dry run")
 
 
 if __name__ == "__main__":

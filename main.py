@@ -101,7 +101,7 @@ def main():
     process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
 
     # Update the last update time after successful processing (both sheets and local file)
-    if args.dry_run:
+    if not args.dry_run:
         update_success = update_last_update_date(
             spreadsheet_id, last_update_range, file_name, today, auth_mode
         )

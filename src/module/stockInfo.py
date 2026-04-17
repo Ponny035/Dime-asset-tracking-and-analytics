@@ -36,9 +36,25 @@ def get_splits_in_range(ticker: str, from_date, to_date) -> pd.Series:
     global _splits_cache
     if ticker not in _splits_cache:
         try:
-            splits = yf.Ticker(ticker).splits
-            if hasattr(splits.index, 'tz') and splits.index.tz is not None:
-                splits.index = splits.index.tz_localize(None)
+            raw = yf.Ticker(ticker).splits
+            # yfinance may return a DataFrame (e.g. with a "Stock Splits" column)
+            # or a Series directly depending on version.  Normalise to a Series.
+            if isinstance(raw, pd.DataFrame):
+                if "Stock Splits" in raw.columns:
+                    splits = raw["Stock Splits"]
+                elif not raw.empty:
+                    splits = raw.iloc[:, 0]
+                else:
+                    splits = pd.Series(dtype=float)
+            else:
+                splits = raw
+            # Normalise to a plain tz-naive DatetimeIndex regardless of what
+            # yfinance returns (object index, tz-aware DatetimeIndex, etc.)
+            if not splits.empty:
+                if not isinstance(splits.index, pd.DatetimeIndex):
+                    splits.index = pd.to_datetime(splits.index, utc=True).tz_convert(None)
+                elif splits.index.tz is not None:
+                    splits.index = splits.index.tz_convert(None)
             _splits_cache[ticker] = splits
         except Exception as e:
             logging.warning(f"Could not fetch split data for {ticker}: {e}")

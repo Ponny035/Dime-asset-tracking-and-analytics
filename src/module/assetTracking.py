@@ -15,6 +15,7 @@ from src.module.stockInfo import (
 )
 from src.module.updateTracker import update_last_update_date
 from src.util.auth import authenticate
+from src.util.sheets import sheets_execute
 
 
 def query_investment_log(
@@ -42,8 +43,8 @@ def query_investment_log(
         credentials = authenticate(auth_mode)
         service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
         sheet = service.spreadsheets()
-        result = (
-            sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        result = sheets_execute(
+            sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name)
         )
         values = result.get("values", [])
         if not values:
@@ -205,6 +206,7 @@ def process_asset_log(
                         ticker, from_date=asset_date, to_date=nyse_temp_datetime
                     )
                     for split_ts, factor in splits_in_window.items():
+                        split_ts = pd.Timestamp(split_ts)  # normalise: yfinance may yield str keys
                         old_share = float(asset_row['Share'])
                         if old_share == 0:
                             continue

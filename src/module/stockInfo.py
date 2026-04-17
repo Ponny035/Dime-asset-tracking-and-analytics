@@ -303,7 +303,7 @@ def get_bulk_available_trading_day_closing_price(
     trading_days = nyse.valid_days(
         start_date='2000-01-01',
         end_date=end_date_nyse.strftime('%Y-%m-%d'),
-        tz=nyse_tz
+        tz='America/New_York'
     )
     if len(trading_days) == 0:
         return None
@@ -319,7 +319,7 @@ def get_bulk_available_trading_day_closing_price(
             trading_days_before = nyse.valid_days(
                 start_date=lookback_start,
                 end_date=lookback_end,
-                tz=nyse_tz
+                tz='America/New_York'
             )
             
             if len(trading_days_before) > 0:

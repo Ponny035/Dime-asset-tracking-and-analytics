@@ -103,7 +103,7 @@ def process_asset_log(
         "Status",
         "Note",
     ]
-    investment_log = investment_log.drop(columns=drop_columns, axis=1).astype(
+    investment_log = investment_log.drop(columns=drop_columns).astype(
         {
             "Share": np.float64,
             "Amount (USD)": np.float64,
@@ -122,6 +122,7 @@ def process_asset_log(
         closing_prices = []
         print("Processing date:", process_date)
         nyse_temp_datetime = datetime.combine(process_date, temp_time)
+        nyse_temp_datetime_str = nyse_temp_datetime.strftime('%Y-%m-%d')
         filtered_investment_log = investment_log[
             investment_log["Date"] == pd.to_datetime(process_date)
         ]
@@ -176,7 +177,6 @@ def process_asset_log(
                     "Performance",
                     "Total Performance",
                 ],
-                axis=1,
             ).astype(
                 {
                     "Share": np.float64,
@@ -241,6 +241,9 @@ def process_asset_log(
 
             stock_triggers = final_df['Product Name'].values.tolist()
             closing_prices = get_bulk_available_trading_day_closing_price(stock_triggers,start_date=nyse_temp_datetime,end_date=nyse_temp_datetime,user_timezone='America/New_York',fill='ffill')
+            if closing_prices is None:
+                logging.error(f"Failed to get closing prices for {process_date.date()}, skipping asset tracking for this date")
+                continue
             performances = []
             total_performances = []
             valuations = []
@@ -249,6 +252,7 @@ def process_asset_log(
                 share, amount_usd, total_amount_usd = temp_asset_log['Share'], temp_asset_log['Amount (USD)'], \
                     temp_asset_log['Total Amount (USD)']
                 if share != 0:
+                    valuation = closing_prices.loc[nyse_temp_datetime_str, trigger] * share
                     valuations.append(valuation)
                     performances.append((valuation - amount_usd) / amount_usd)
                     total_performances.append(

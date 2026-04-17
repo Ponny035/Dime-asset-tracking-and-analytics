@@ -198,6 +198,7 @@ def process_asset_tracking(is_dry_run, start_date, end_date, user_timezone, auth
         end_date=nyse_end_date,
         auth_mode=auth_mode,
         update_tracker_params=update_tracker_params,
+        invest_log_range_name=stock_range_name,
     )
 
     return None

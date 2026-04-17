@@ -22,6 +22,52 @@ class StockPriceFetchError(Exception):
     pass
 
 
+# Session-level cache so each ticker's split history is fetched only once per run
+_splits_cache: dict = {}
+
+
+def get_splits_in_range(ticker: str, from_date, to_date) -> pd.Series:
+    """
+    Returns each split/reverse-split event for *ticker* that occurred strictly
+    after *from_date* and on or before *to_date* as a pd.Series
+    (DatetimeIndex → ratio, e.g. 10.0 for a 10-for-1 split).
+    Returns an empty Series when there are no events in the window.
+    """
+    global _splits_cache
+    if ticker not in _splits_cache:
+        try:
+            splits = yf.Ticker(ticker).splits
+            if hasattr(splits.index, 'tz') and splits.index.tz is not None:
+                splits.index = splits.index.tz_localize(None)
+            _splits_cache[ticker] = splits
+        except Exception as e:
+            logging.warning(f"Could not fetch split data for {ticker}: {e}")
+            _splits_cache[ticker] = pd.Series(dtype=float)
+
+    splits = _splits_cache[ticker]
+    if splits.empty:
+        return pd.Series(dtype=float)
+
+    from_ts = pd.Timestamp(from_date)
+    to_ts = pd.Timestamp(to_date)
+    return splits[(splits.index > from_ts) & (splits.index <= to_ts)]
+
+
+def get_split_factor(ticker: str, from_date, to_date) -> float:
+    """
+    Returns the cumulative split/reverse-split factor for *ticker* for any
+    corporate actions that occurred strictly after *from_date* and on or
+    before *to_date*.
+
+    Returns 1.0 when no splits occurred in that window.
+    A 2-for-1 split returns 2.0; a 1-for-10 reverse split returns 0.1.
+    """
+    relevant = get_splits_in_range(ticker, from_date, to_date)
+    if relevant.empty:
+        return 1.0
+    return float(relevant.prod())
+
+
 def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     """
     Retrieves basic information about a stock from the FinvizFinance API.
@@ -450,6 +496,8 @@ def get_bulk_available_trading_day_closing_price(
 
         return result
 
+    except StockPriceFetchError:
+        raise  # Always propagate so callers can handle exhausted retries
     except Exception as e:
         logging.error(f"get_bulk_available_trading_day_closing_price failed: {e}", exc_info=True)
 

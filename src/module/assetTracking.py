@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, time
+import logging
 
 import numpy as np
 import pandas as pd
@@ -10,6 +11,7 @@ from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.stockInfo import (
     check_valid_trading_date,
     get_bulk_available_trading_day_closing_price,
+    get_splits_in_range,
 )
 from src.module.updateTracker import update_last_update_date
 from src.util.auth import authenticate
@@ -64,6 +66,7 @@ def query_investment_log(
         print(err)
 
 
+
 def process_asset_log(
     is_dry_run,
     investment_log,
@@ -73,6 +76,7 @@ def process_asset_log(
     end_date: datetime.date,
     auth_mode: str = "oauth",
     update_tracker_params: dict = None,
+    invest_log_range_name: str = None,
 ):
     """
     Process asset log data by updating asset tracking information and importing it into a Google Sheet.
@@ -103,6 +107,13 @@ def process_asset_log(
         "Status",
         "Note",
     ]
+    # Save full invest log (all columns) before dropping — used for split audit trail
+    investment_log_full = investment_log.copy()
+    investment_log_full['Date'] = pd.to_datetime(investment_log_full['Date'])
+    ticker_dividend_map = (
+        investment_log_full.groupby('Product Name')['Have Dividend'].first().to_dict()
+        if 'Have Dividend' in investment_log_full.columns else {}
+    )
     investment_log = investment_log.drop(columns=drop_columns).astype(
         {
             "Share": np.float64,
@@ -184,6 +195,94 @@ def process_asset_log(
                     "Total Amount (USD)": np.float64,
                 }
             )
+            # --- Detect stock splits and inject audit-trail SEL/BUY rows ---
+            split_sheet_rows = []
+            if not asset_log.empty and invest_log_range_name:
+                for _, asset_row in asset_log.iterrows():
+                    ticker = asset_row['Product Name']
+                    asset_date = pd.to_datetime(asset_row['Date'])
+                    splits_in_window = get_splits_in_range(
+                        ticker, from_date=asset_date, to_date=nyse_temp_datetime
+                    )
+                    for split_ts, factor in splits_in_window.items():
+                        old_share = float(asset_row['Share'])
+                        if old_share == 0:
+                            continue
+                        split_date_str = split_ts.strftime('%Y-%m-%d')
+                        # Idempotency: skip if this split is already in the invest log
+                        already_recorded = (
+                            'Note' in investment_log_full.columns
+                            and not investment_log_full.empty
+                            and not investment_log_full[
+                                (investment_log_full['Product Name'] == ticker)
+                                & (investment_log_full['Date'].dt.strftime('%Y-%m-%d') == split_date_str)
+                                & (investment_log_full['Note'] == 'Stock Split')
+                            ].empty
+                        )
+                        if already_recorded:
+                            logging.info(f"Split {ticker} on {split_date_str} already in invest log, skipping")
+                            continue
+                        new_share = round(old_share * factor, 7)
+                        port = asset_row['Port']
+                        sector = asset_row['Sector']
+                        industry = asset_row['Industry']
+                        has_dividend = ticker_dividend_map.get(ticker, True)
+                        action = "split" if factor > 1 else "reverse split"
+                        logging.info(f"{ticker}: {action} factor={factor} on {split_date_str}, shares {old_share} → {new_share}")
+                        # Inject net-delta rows into filtered_investment_log so the merge produces post-split shares
+                        inject_rows = pd.DataFrame([
+                            {'Date': pd.Timestamp(split_date_str), 'Port': port, 'Product Name': ticker,
+                             'Sector': sector, 'Industry': industry,
+                             'Amount (USD)': 0.0, 'Total Amount (USD)': 0.0, 'Share': round(-old_share, 7)},
+                            {'Date': pd.Timestamp(split_date_str), 'Port': port, 'Product Name': ticker,
+                             'Sector': sector, 'Industry': industry,
+                             'Amount (USD)': 0.0, 'Total Amount (USD)': 0.0, 'Share': new_share},
+                        ])
+                        filtered_investment_log = pd.concat(
+                            [filtered_investment_log, inject_rows], ignore_index=True
+                        )
+                        # Full rows to write to invest log sheet for audit trail
+                        split_sheet_rows += [
+                            [split_date_str, port, 'SEL', ticker, sector, industry, has_dividend,
+                             0, 0, 0, 0.00, 0.00, round(-old_share, 7), 'Done', 'Stock Split'],
+                            [split_date_str, port, 'BUY', ticker, sector, industry, has_dividend,
+                             0, 0, 0, 0.00, 0.00, new_share, 'Done', 'Stock Split'],
+                        ]
+                        # Track in-memory to prevent re-injection within the same run
+                        investment_log_full = pd.concat([investment_log_full, pd.DataFrame([{
+                            'Date': pd.Timestamp(split_date_str), 'Port': port, 'Type': 'BUY',
+                            'Product Name': ticker, 'Sector': sector, 'Industry': industry,
+                            'Have Dividend': has_dividend, 'Stock Price (USD)': 0,
+                            'Commission (USD)': 0, 'Tax (USD)': 0,
+                            'Amount (USD)': 0.0, 'Total Amount (USD)': 0.0,
+                            'Share': new_share, 'Status': 'Done', 'Note': 'Stock Split',
+                        }])], ignore_index=True)
+            if split_sheet_rows:
+                if not is_dry_run:
+                    export_invest_log_to_google_sheet(
+                        spreadsheet_id, invest_log_range_name, "USER_ENTERED", split_sheet_rows, auth_mode
+                    )
+                else:
+                    print(f"Dry run: would write {len(split_sheet_rows)} split rows to invest log")
+            # Re-group so injected SEL+BUY rows are combined into one net-delta row
+            # per ticker before the merge (avoids duplicate rows in the outer join).
+            if not filtered_investment_log.empty:
+                filtered_investment_log = (
+                    filtered_investment_log
+                    .groupby(["Product Name"], as_index=False)
+                    .agg({
+                        "Date": "first",
+                        "Port": "first",
+                        "Sector": "first",
+                        "Industry": "first",
+                        "Amount (USD)": "sum",
+                        "Total Amount (USD)": "sum",
+                        "Share": "sum",
+                    })
+                )
+                numeric_cols = filtered_investment_log.select_dtypes(include=["number"]).columns
+                filtered_investment_log[numeric_cols] = filtered_investment_log[numeric_cols].round(7)
+            # --- End split detection ---
             if not asset_log.empty:
                 merged_df = pd.merge(
                     asset_log,

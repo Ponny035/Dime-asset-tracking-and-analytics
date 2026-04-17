@@ -9,6 +9,7 @@ from src.pipeline.processTransaction import process_asset_tracking
 from src.pipeline.processTransaction import process_investment_transactions
 from src.module.checkThaiHoliday import update_financial_institutions_holidays
 from src.module.updateTracker import get_last_update_date, update_last_update_date
+from src.module.stockInfo import StockPriceFetchError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -97,8 +98,16 @@ def main():
 
     print(f"Processing from {start_date} to {end_date}")
     # Call the functions with the specified dates
-    process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode)
-    process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
+    try:
+        process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode)
+        process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
+    except StockPriceFetchError as e:
+        logging.error(
+            f"Failed to fetch stock price for '{e}' after all retries. "
+            "All changes have been rolled back. "
+            "Please wait at least 15 minutes before running again."
+        )
+        raise SystemExit(1)
 
     # Update the last update time after successful processing (both sheets and local file)
     if not args.dry_run:

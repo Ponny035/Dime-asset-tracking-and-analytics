@@ -5,6 +5,22 @@ import yfinance as yf
 import pandas_market_calendars as mcal
 import pytz
 import pandas as pd
+import time
+import logging
+import os
+import tempfile
+
+# Give each process its own yfinance cache directory to avoid SQLite locking
+# when multiple downloads run in quick succession
+_yf_cache_dir = os.path.join(tempfile.gettempdir(), f'py-yfinance-{os.getpid()}')
+os.makedirs(_yf_cache_dir, exist_ok=True)
+yf.set_tz_cache_location(_yf_cache_dir)
+
+
+class StockPriceFetchError(Exception):
+    """Raised when stock price fetching fails after all retries are exhausted."""
+    pass
+
 
 def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     """
@@ -335,57 +351,108 @@ def get_bulk_available_trading_day_closing_price(
         # yfinance end date is exclusive, so add one day
         yf_end = (end_date.date() + timedelta(days=1)).strftime('%Y-%m-%d')
         
-        # Download data from yfinance
-        data = yf.download(ticker, start=yf_start, end=yf_end, progress=False)
-        
+        # Bulk download — threads=False prevents SQLite lock contention in yfinance cache
+        max_retries = 3
+        try:
+            data = yf.download(ticker, start=yf_start, end=yf_end, progress=False, auto_adjust=False, threads=False)
+        except Exception as e:
+            logging.error(f"Bulk download failed: {e}")
+            data = pd.DataFrame()
+
         if not data.empty:
-            # Extract closing prices (handle both single and multi-ticker cases)
-            if len(ticker) == 1:
-                close_data = data['Close'].to_frame(ticker[0])
-            else:
-                close_data = data['Close']
-            if fill is not None:
-                # Create complete date range INCLUDING any historical data we fetched
-                if fill == 'ffill' and yf_start < start_date.strftime('%Y-%m-%d'):
-                    # Extend range to include the historical start date
-                    full_range = pd.date_range(
-                        start=yf_start,  # Start from where we fetched
-                        end=end_date.date(), 
-                        freq='D'
-                    )
+            close_data = data['Close'].to_frame(ticker[0]) if len(ticker) == 1 else data['Close'].copy()
+        else:
+            close_data = pd.DataFrame()
+
+        # Normalise index timezone — yfinance can return tz-aware index
+        if not close_data.empty and close_data.index.tz is not None:
+            close_data.index = close_data.index.tz_localize(None)
+
+        # Retry only tickers that came back missing/all-NaN individually
+        missing = [t for t in ticker if t not in close_data.columns or close_data[t].isna().all()]
+        if missing:
+            logging.warning(f"Bulk download missing {missing}, retrying individually...")
+            for t in missing:
+                for attempt in range(max_retries):
+                    time.sleep(0.15)
+                    try:
+                        raw = yf.download([t], start=yf_start, end=yf_end, progress=False, auto_adjust=False, threads=False)
+                        if not raw.empty:
+                            col = raw['Close']
+                            if isinstance(col, pd.Series):
+                                col = col.rename(t).to_frame()
+                            else:
+                                col = col.rename(columns={col.columns[0]: t})
+                            if col.index.tz is not None:
+                                col.index = col.index.tz_localize(None)
+                            # Drop the all-NaN placeholder column before assigning
+                            if t in close_data.columns:
+                                close_data = close_data.drop(columns=[t])
+                            close_data = pd.concat([close_data, col[[t]]], axis=1)
+                            break
+                        logging.warning(f"{t}: empty on attempt {attempt + 1}/{max_retries}")
+                    except Exception as e:
+                        logging.warning(f"{t}: attempt {attempt + 1}/{max_retries} failed — {e}")
                 else:
-                    full_range = pd.date_range(
-                        start=start_date.date(), 
-                        end=end_date.date(), 
-                        freq='D'
-                    )
-                
-                # Reindex to include all calendar days
-                close_data = close_data.reindex(full_range)
-                
-                # Apply fill strategy
-                if fill == 'ffill':
-                    close_data = close_data.ffill()
-                elif fill == 'bfill':
-                    close_data = close_data.bfill()
-                elif fill == 'zero':
-                    close_data = close_data.fillna(0)
-                elif fill == 'nan':
-                    pass
-                
-                # Trim to only the requested date range
-                requested_range = pd.date_range(
+                    raise StockPriceFetchError(t)
+
+        if close_data.empty:
+            return None
+
+        if fill is not None:
+            # Create complete date range INCLUDING any historical data we fetched
+            if fill == 'ffill' and yf_start < start_date.strftime('%Y-%m-%d'):
+                # Extend range to include the historical start date
+                full_range = pd.date_range(
+                    start=yf_start,  # Start from where we fetched
+                    end=end_date.date(),
+                    freq='D'
+                )
+            else:
+                full_range = pd.date_range(
                     start=start_date.date(),
                     end=end_date.date(),
                     freq='D'
                 )
-                close_data = close_data.loc[requested_range]
-            
-            return close_data.round(2)
-            
+
+            # Reindex to include all calendar days
+            close_data = close_data.reindex(full_range)
+
+            # Apply fill strategy
+            if fill == 'ffill':
+                close_data = close_data.ffill()
+            elif fill == 'bfill':
+                close_data = close_data.bfill()
+            elif fill == 'zero':
+                close_data = close_data.fillna(0)
+            elif fill == 'nan':
+                pass
+
+            # Trim to only the requested date range
+            requested_range = pd.date_range(
+                start=start_date.date(),
+                end=end_date.date(),
+                freq='D'
+            )
+            close_data = close_data.loc[requested_range]
+
+        result = close_data.round(2)
+
+        # Validate that all requested tickers have data for the requested range
+        missing_tickers = [t for t in ticker if t not in result.columns or result[t].isna().all()]
+        partial_tickers = [t for t in ticker if t in result.columns and result[t].isna().any() and not result[t].isna().all()]
+        if missing_tickers:
+            logging.error(f"Validation failed: no data at all for {missing_tickers}")
+        if partial_tickers:
+            logging.warning(f"Validation warning: partial NaN values for {partial_tickers}")
+        if not missing_tickers and not partial_tickers:
+            logging.info(f"Validation passed: all {len(ticker)} tickers have complete data")
+
+        return result
+
     except Exception as e:
-        print(f"Error fetching stock price: {e}")
-    
+        logging.error(f"get_bulk_available_trading_day_closing_price failed: {e}", exc_info=True)
+
     return None
 
 def check_valid_trading_date(

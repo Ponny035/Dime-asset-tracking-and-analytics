@@ -64,6 +64,7 @@ def main():
     args = parser.parse_args()
 
     if args.dry_run:
+        logging.info("Dry run mode")
         logging.info("Simulate execution without writing")
 
 
@@ -71,7 +72,7 @@ def main():
     today = dt.datetime.now().date()
 
     # Update holidays information
-    print("Updating holidays information")
+    logging.info("Updating holidays information")
     update_financial_institutions_holidays(token_id)
 
     # Check if today is a working day (skip if manual mode)
@@ -95,13 +96,13 @@ def main():
         start_date = today
         end_date = today
 
-    print(f"Processing from {start_date} to {end_date}")
+    logging.info(f"Processing from {start_date} to {end_date}")
     # Call the functions with the specified dates
     process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode)
     process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
 
     # Update the last update time after successful processing (both sheets and local file)
-    if args.dry_run:
+    if not args.dry_run:
         update_success = update_last_update_date(
             spreadsheet_id, last_update_range, file_name, today, auth_mode
         )

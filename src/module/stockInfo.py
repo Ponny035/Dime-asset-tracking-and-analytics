@@ -5,6 +5,84 @@ import yfinance as yf
 import pandas_market_calendars as mcal
 import pytz
 import pandas as pd
+import time
+import logging
+import os
+import tempfile
+
+# Give each process its own yfinance cache directory to avoid SQLite locking
+# when multiple downloads run in quick succession
+_yf_cache_dir = os.path.join(tempfile.gettempdir(), f'py-yfinance-{os.getpid()}')
+os.makedirs(_yf_cache_dir, exist_ok=True)
+yf.set_tz_cache_location(_yf_cache_dir)
+
+
+class StockPriceFetchError(Exception):
+    """Raised when stock price fetching fails after all retries are exhausted."""
+    pass
+
+
+# Session-level cache so each ticker's split history is fetched only once per run
+_splits_cache: dict = {}
+
+
+def get_splits_in_range(ticker: str, from_date, to_date) -> pd.Series:
+    """
+    Returns each split/reverse-split event for *ticker* that occurred strictly
+    after *from_date* and on or before *to_date* as a pd.Series
+    (DatetimeIndex → ratio, e.g. 10.0 for a 10-for-1 split).
+    Returns an empty Series when there are no events in the window.
+    """
+    global _splits_cache
+    if ticker not in _splits_cache:
+        try:
+            raw = yf.Ticker(ticker).splits
+            # yfinance may return a DataFrame (e.g. with a "Stock Splits" column)
+            # or a Series directly depending on version.  Normalise to a Series.
+            if isinstance(raw, pd.DataFrame):
+                if "Stock Splits" in raw.columns:
+                    splits = raw["Stock Splits"]
+                elif not raw.empty:
+                    splits = raw.iloc[:, 0]
+                else:
+                    splits = pd.Series(dtype=float)
+            else:
+                splits = raw
+            # Normalise to a plain tz-naive DatetimeIndex regardless of what
+            # yfinance returns (object index, tz-aware DatetimeIndex, etc.)
+            if not splits.empty:
+                if not isinstance(splits.index, pd.DatetimeIndex):
+                    splits.index = pd.to_datetime(splits.index, utc=True).tz_convert(None)
+                elif splits.index.tz is not None:
+                    splits.index = splits.index.tz_convert(None)
+            _splits_cache[ticker] = splits
+        except Exception as e:
+            logging.warning(f"Could not fetch split data for {ticker}: {e}")
+            _splits_cache[ticker] = pd.Series(dtype=float)
+
+    splits = _splits_cache[ticker]
+    if splits.empty:
+        return pd.Series(dtype=float)
+
+    from_ts = pd.Timestamp(from_date)
+    to_ts = pd.Timestamp(to_date)
+    return splits[(splits.index > from_ts) & (splits.index <= to_ts)]
+
+
+def get_split_factor(ticker: str, from_date, to_date) -> float:
+    """
+    Returns the cumulative split/reverse-split factor for *ticker* for any
+    corporate actions that occurred strictly after *from_date* and on or
+    before *to_date*.
+
+    Returns 1.0 when no splits occurred in that window.
+    A 2-for-1 split returns 2.0; a 1-for-10 reverse split returns 0.1.
+    """
+    relevant = get_splits_in_range(ticker, from_date, to_date)
+    if relevant.empty:
+        return 1.0
+    return float(relevant.prod())
+
 
 def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     """
@@ -303,7 +381,7 @@ def get_bulk_available_trading_day_closing_price(
     trading_days = nyse.valid_days(
         start_date='2000-01-01',
         end_date=end_date_nyse.strftime('%Y-%m-%d'),
-        tz=nyse_tz
+        tz='America/New_York'
     )
     if len(trading_days) == 0:
         return None
@@ -319,7 +397,7 @@ def get_bulk_available_trading_day_closing_price(
             trading_days_before = nyse.valid_days(
                 start_date=lookback_start,
                 end_date=lookback_end,
-                tz=nyse_tz
+                tz='America/New_York'
             )
             
             if len(trading_days_before) > 0:
@@ -335,57 +413,110 @@ def get_bulk_available_trading_day_closing_price(
         # yfinance end date is exclusive, so add one day
         yf_end = (end_date.date() + timedelta(days=1)).strftime('%Y-%m-%d')
         
-        # Download data from yfinance
-        data = yf.download(ticker, start=yf_start, end=yf_end, progress=False)
-        
+        # Bulk download — threads=False prevents SQLite lock contention in yfinance cache
+        max_retries = 3
+        try:
+            data = yf.download(ticker, start=yf_start, end=yf_end, progress=False, auto_adjust=False, threads=False)
+        except Exception as e:
+            logging.error(f"Bulk download failed: {e}")
+            data = pd.DataFrame()
+
         if not data.empty:
-            # Extract closing prices (handle both single and multi-ticker cases)
-            if len(ticker) == 1:
-                close_data = data['Close'].to_frame(ticker[0])
-            else:
-                close_data = data['Close']
-            if fill is not None:
-                # Create complete date range INCLUDING any historical data we fetched
-                if fill == 'ffill' and yf_start < start_date.strftime('%Y-%m-%d'):
-                    # Extend range to include the historical start date
-                    full_range = pd.date_range(
-                        start=yf_start,  # Start from where we fetched
-                        end=end_date.date(), 
-                        freq='D'
-                    )
+            close_data = data['Close'].to_frame(ticker[0]) if len(ticker) == 1 else data['Close'].copy()
+        else:
+            close_data = pd.DataFrame()
+
+        # Normalise index timezone — yfinance can return tz-aware index
+        if not close_data.empty and close_data.index.tz is not None:
+            close_data.index = close_data.index.tz_localize(None)
+
+        # Retry only tickers that came back missing/all-NaN individually
+        missing = [t for t in ticker if t not in close_data.columns or close_data[t].isna().all()]
+        if missing:
+            logging.warning(f"Bulk download missing {missing}, retrying individually...")
+            for t in missing:
+                for attempt in range(max_retries):
+                    time.sleep(0.15)
+                    try:
+                        raw = yf.download([t], start=yf_start, end=yf_end, progress=False, auto_adjust=False, threads=False)
+                        if not raw.empty:
+                            col = raw['Close']
+                            if isinstance(col, pd.Series):
+                                col = col.rename(t).to_frame()
+                            else:
+                                col = col.rename(columns={col.columns[0]: t})
+                            if col.index.tz is not None:
+                                col.index = col.index.tz_localize(None)
+                            # Drop the all-NaN placeholder column before assigning
+                            if t in close_data.columns:
+                                close_data = close_data.drop(columns=[t])
+                            close_data = pd.concat([close_data, col[[t]]], axis=1)
+                            break
+                        logging.warning(f"{t}: empty on attempt {attempt + 1}/{max_retries}")
+                    except Exception as e:
+                        logging.warning(f"{t}: attempt {attempt + 1}/{max_retries} failed — {e}")
                 else:
-                    full_range = pd.date_range(
-                        start=start_date.date(), 
-                        end=end_date.date(), 
-                        freq='D'
-                    )
-                
-                # Reindex to include all calendar days
-                close_data = close_data.reindex(full_range)
-                
-                # Apply fill strategy
-                if fill == 'ffill':
-                    close_data = close_data.ffill()
-                elif fill == 'bfill':
-                    close_data = close_data.bfill()
-                elif fill == 'zero':
-                    close_data = close_data.fillna(0)
-                elif fill == 'nan':
-                    pass
-                
-                # Trim to only the requested date range
-                requested_range = pd.date_range(
+                    raise StockPriceFetchError(t)
+
+        if close_data.empty:
+            return None
+
+        if fill is not None:
+            # Create complete date range INCLUDING any historical data we fetched
+            if fill == 'ffill' and yf_start < start_date.strftime('%Y-%m-%d'):
+                # Extend range to include the historical start date
+                full_range = pd.date_range(
+                    start=yf_start,  # Start from where we fetched
+                    end=end_date.date(),
+                    freq='D'
+                )
+            else:
+                full_range = pd.date_range(
                     start=start_date.date(),
                     end=end_date.date(),
                     freq='D'
                 )
-                close_data = close_data.loc[requested_range]
-            
-            return close_data.round(2)
-            
+
+            # Reindex to include all calendar days
+            close_data = close_data.reindex(full_range)
+
+            # Apply fill strategy
+            if fill == 'ffill':
+                close_data = close_data.ffill()
+            elif fill == 'bfill':
+                close_data = close_data.bfill()
+            elif fill == 'zero':
+                close_data = close_data.fillna(0)
+            elif fill == 'nan':
+                pass
+
+            # Trim to only the requested date range
+            requested_range = pd.date_range(
+                start=start_date.date(),
+                end=end_date.date(),
+                freq='D'
+            )
+            close_data = close_data.loc[requested_range]
+
+        result = close_data.round(2)
+
+        # Validate that all requested tickers have data for the requested range
+        missing_tickers = [t for t in ticker if t not in result.columns or result[t].isna().all()]
+        partial_tickers = [t for t in ticker if t in result.columns and result[t].isna().any() and not result[t].isna().all()]
+        if missing_tickers:
+            logging.error(f"Validation failed: no data at all for {missing_tickers}")
+        if partial_tickers:
+            logging.warning(f"Validation warning: partial NaN values for {partial_tickers}")
+        if not missing_tickers and not partial_tickers:
+            logging.info(f"Validation passed: all {len(ticker)} tickers have complete data")
+
+        return result
+
+    except StockPriceFetchError:
+        raise  # Always propagate so callers can handle exhausted retries
     except Exception as e:
-        print(f"Error fetching stock price: {e}")
-    
+        logging.error(f"get_bulk_available_trading_day_closing_price failed: {e}", exc_info=True)
+
     return None
 
 def check_valid_trading_date(

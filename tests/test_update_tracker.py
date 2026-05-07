@@ -25,6 +25,7 @@ class TestUpdateTracker(unittest.TestCase):
         mock_service.spreadsheets().values().get().execute.return_value = {
             'values': [['2025-06-24']]
         }
+        mock_service.reset_mock()
 
         result = updateTracker.get_last_update_from_sheets(
             self.test_spreadsheet_id, self.test_range
@@ -73,6 +74,7 @@ class TestUpdateTracker(unittest.TestCase):
         mock_service = MagicMock()
         mock_build.return_value = mock_service
         mock_service.spreadsheets().values().update().execute.return_value = {}
+        mock_service.reset_mock()
 
         result = updateTracker.update_last_update_in_sheets(
             self.test_spreadsheet_id, self.test_range, self.test_date

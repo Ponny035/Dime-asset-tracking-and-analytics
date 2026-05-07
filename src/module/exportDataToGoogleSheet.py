@@ -2,6 +2,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from src.util.auth import authenticate
+from src.util.sheets import sheets_execute
 
 
 def export_invest_log_to_google_sheet(
@@ -21,12 +22,10 @@ def export_invest_log_to_google_sheet(
         dict: The result of the API call.
     """
     try:
-
         credentials = authenticate(auth_mode)
-
         service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
         body = {"values": transaction}
-        result = (
+        result = sheets_execute(
             service.spreadsheets()
             .values()
             .append(
@@ -35,7 +34,6 @@ def export_invest_log_to_google_sheet(
                 valueInputOption=value_input_option,
                 body=body,
             )
-            .execute()
         )
         print(f"{result['updates']['updatedCells']} cells appended.")
         return result

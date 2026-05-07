@@ -37,19 +37,7 @@ def calculate_commission_and_tax (amount : float, commission_and_tax : float):
             calculate_withholding_tax = (commission_and_tax - commission)
     return commission, calculate_withholding_tax
 
-def process_pdf(pdf_file_path: str, password: str) -> tuple:
-    """
-    Process a PDF file containing stock transaction information.
-
-    Args:
-        pdf_file_path (str): The path to the PDF file.
-        password (str): The password to unlock the PDF file.
-
-    Returns:
-        tuple: A tuple containing the date of the transactions and a list of transactions.
-
-    """
-
+def process_us_transactions_pdf (pdf_file_path: str, password: str):
     # Open the locked PDF file with the given password
     with open(pdf_file_path, "rb") as pdf_file:
         # Create a PDF reader object
@@ -156,3 +144,30 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
                         )
         # Return the date and transactions as a tuple
         return date, transactions, option_transactions
+
+def process_pdf(pdf_file_path: str, password: str) -> tuple:
+    """
+    Process a PDF file containing stock transaction information.
+
+    Args:
+        pdf_file_path (str): The path to the PDF file.
+        password (str): The password to unlock the PDF file.
+
+    Returns:
+        tuple: A tuple containing the date of the transactions and a list of transactions.
+
+    """
+    is_th_transaction_file = False
+    date = None
+    transactions = None
+    option_transactions = None
+
+    if "_TH_" in pdf_file_path:
+        # is_th_transaction_file = True
+        print("hello :",pdf_file_path)
+
+    if not is_th_transaction_file:
+        date, transactions, option_transactions = process_us_transactions_pdf(pdf_file_path, password)
+    
+    return date, transactions, option_transactions
+    

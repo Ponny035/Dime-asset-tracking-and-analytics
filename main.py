@@ -18,6 +18,9 @@ load_dotenv()
 token_id = os.getenv("BOT_API_TOKEN_ID")
 spreadsheet_id = os.getenv("SPREADSHEET_ID")
 last_update_range = os.getenv("LAST_UPDATE_RANGE_NAME")
+last_invest_log_update_range = os.getenv("LAST_INVEST_LOG_UPDATE_RANGE_NAME")
+last_asset_log_update_range = os.getenv("LAST_ASSET_LOG_UPDATE_RANGE_NAME")
+last_performance_log_update_range = os.getenv("LAST_PERFORMANCE_LOG_UPDATE_RANGE_NAME")
 auth_mode = os.getenv("AUTH_MODE", "oauth")
 
 
@@ -83,6 +86,9 @@ def main():
 
     # Get the last update date from Google Sheets (source of truth) with local file fallback
     last_update = get_last_update_date(spreadsheet_id, last_update_range, file_name, auth_mode)
+    last_invest_log_update = get_last_update_date(spreadsheet_id, last_invest_log_update_range, file_name, auth_mode)
+    last_asset_log_update = get_last_update_date(spreadsheet_id, last_asset_log_update_range, file_name, auth_mode)
+    last_performance_log_update = get_last_update_date(spreadsheet_id, last_performance_log_update_range, file_name, auth_mode)
 
     if last_update and not args.manual and last_update == today:
         logging.info('"investment log" No update needed. Already updated today.')

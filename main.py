@@ -65,13 +65,30 @@ def main():
         action="store_true",
         help="Simulate execution without writing to sheets",
     )
+
+    parser.add_argument(
+        "-s",
+        "--start-date",
+        type=dt.date.fromisoformat,
+        help='Manual start date input in ISO format (YYYY-MM-DD)',
+    )
+
+    parser.add_argument(
+        "-e",
+        "--end-date",
+        type=dt.date.fromisoformat,
+        help='Manual end date input in ISO format (YYYY-MM-DD)',
+    )
     args = parser.parse_args()
 
     if args.dry_run:
         logging.info("Dry run mode")
         logging.info("Simulate execution without writing")
+    
+    if args.end_date and not args.start_date:
+        parser.error("--end-date requires --start-date")
 
-
+    # exit()
     # Get today's date
     today = dt.datetime.now().date()
 
@@ -87,21 +104,35 @@ def main():
 
     # Get the last update date from Google Sheets (source of truth) with local file fallback
     last_update = get_last_update_date(spreadsheet_id, last_update_range, file_name, auth_mode)
-    last_invest_log_update = get_last_update_date(spreadsheet_id, last_invest_log_update_range, file_name, auth_mode)
-    last_asset_log_update = get_last_update_date(spreadsheet_id, last_asset_log_update_range, file_name, auth_mode)
-    last_performance_log_update = get_last_update_date(spreadsheet_id, last_performance_log_update_range, file_name, auth_mode)
+    # last_invest_log_update = get_last_update_date(spreadsheet_id, last_invest_log_update_range, file_name, auth_mode)
+    # last_asset_log_update = get_last_update_date(spreadsheet_id, last_asset_log_update_range, file_name, auth_mode)
+    # last_performance_log_update = get_last_update_date(spreadsheet_id, last_performance_log_update_range, file_name, auth_mode)
 
-    if last_update and not args.manual and last_update == today:
+    if last_update and not args.manual and last_update == today and not args.start_date:
         logging.info('"investment log" No update needed. Already updated today.')
         logging.info("Use -m or --manual flag to force update.")
         exit()
     elif last_update:
-        start_date = last_update + dt.timedelta(days=1)
-        end_date = today
+        if args.start_date and args.end_date:
+            start_date = args.start_date
+            end_date = args.end_date
+        elif args.start_date and not args.end_date:
+            start_date = args.start_date
+            # if start_date > today return error
+            end_date = today
+        else:
+            start_date = last_update + dt.timedelta(days=1)
+            end_date = today
     else:
-        # If no previous update found, start with today's date
-        start_date = today
-        end_date = today
+        if args.start_date and args.end_date:
+            start_date = args.start_date
+            end_date = args.end_date
+        elif args.start_date and not args.end_date:
+            start_date = args.start_date
+            end_date = today
+        else:
+            start_date = today
+            end_date = today
 
     logging.info(f"Processing from {start_date} to {end_date}")
     # Call the functions with the specified dates

@@ -112,7 +112,7 @@ def main():
         logging.info('"investment log" No update needed. Already updated today.')
         logging.info("Use -m or --manual flag to force update.")
         exit()
-    elif last_update:
+    elif last_update: # check start date first the end the last update 
         if args.start_date and args.end_date:
             start_date = args.start_date
             end_date = args.end_date
@@ -137,7 +137,7 @@ def main():
     logging.info(f"Processing from {start_date} to {end_date}")
     # Call the functions with the specified dates
     try:
-        process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode)
+        process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode) 
         process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
     except StockPriceFetchError as e:
         logging.error(

@@ -86,7 +86,8 @@ def get_split_factor(ticker: str, from_date, to_date) -> float:
 
 def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     """
-    Retrieves basic information about a stock from the FinvizFinance API.
+    Retrieves basic information about a stock.
+    Tries finvizfinance first, falls back to yfinance if finviz scraping fails.
 
     Args:
         stock_name (str): The name of the stock. Default is "AAPL" (Apple Inc.).
@@ -94,17 +95,30 @@ def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
     Returns:
         dict: A dictionary containing the basic information of the stock.
     """
-    stock = finvizfinance(stock_name)
-    stock_fundament = stock.ticker_fundament()
+    try:
+        stock = finvizfinance(stock_name)
+        stock_fundament = stock.ticker_fundament()
+        return {
+            "Company": str(stock_fundament["Company"]),
+            "Sector": str(stock_fundament["Sector"]),
+            "Industry": str(stock_fundament["Industry"]),
+            "Country": str(stock_fundament["Country"]),
+            "Dividend": str(stock_fundament.get("Dividend TTM", "-")),
+        }
+    except Exception as finviz_err:
+        logging.warning(f"finvizfinance failed for {stock_name} ({finviz_err}), falling back to yfinance")
 
-    stock_basic_info = {
-        "Company": str(stock_fundament["Company"]),
-        "Sector": str(stock_fundament["Sector"]),
-        "Industry": str(stock_fundament["Industry"]),
-        "Country": str(stock_fundament["Country"]),
-        "Dividend": str(stock_fundament["Dividend TTM"]),
+    info = yf.Ticker(stock_name).info
+    if not info or info.get("quoteType") is None:
+        raise RuntimeError(f"Both finvizfinance and yfinance failed to fetch info for {stock_name}")
+    dividend = info.get("trailingAnnualDividendRate") or info.get("dividendRate")
+    return {
+        "Company": str(info.get("longName") or info.get("shortName") or stock_name),
+        "Sector": str(info.get("sector") or "-"),
+        "Industry": str(info.get("industry") or "-"),
+        "Country": str(info.get("country") or "-"),
+        "Dividend": str(dividend) if dividend else "-",
     }
-    return stock_basic_info
 
 
 def format_stock_transaction(

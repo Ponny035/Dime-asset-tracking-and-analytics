@@ -1,15 +1,15 @@
 import os
-import json
 import logging
 import datetime as dt
 import argparse
 from dotenv import load_dotenv
 
+from src.exceptions import StockPriceFetchError, StartDateError
 from src.pipeline.processTransaction import process_asset_tracking
 from src.pipeline.processTransaction import process_investment_transactions
 from src.module.checkThaiHoliday import update_financial_institutions_holidays
 from src.module.updateTracker import get_last_update_date, update_last_update_date
-from src.module.stockInfo import StockPriceFetchError
+from src.util.check_validity import check_working_day
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,25 +23,6 @@ last_invest_log_update_range = os.getenv("LAST_INVEST_LOG_UPDATE_RANGE_NAME")
 last_asset_log_update_range = os.getenv("LAST_ASSET_LOG_UPDATE_RANGE_NAME")
 last_performance_log_update_range = os.getenv("LAST_PERFORMANCE_LOG_UPDATE_RANGE_NAME")
 auth_mode = os.getenv("AUTH_MODE", "oauth")
-
-
-def is_working_day(date):
-    # Check if it's weekend (5 = Saturday, 6 = Sunday)
-    if date.weekday() >= 5:
-        return False
-
-    # Read holidays from JSON file
-    try:
-        with open("financial_institutions_holidays.json", "r") as file:
-            holidays_data = json.load(file)
-            holidays = holidays_data.get("holidays", [])
-
-            # Check if the date is in holidays list
-            date_str = date.strftime("%Y-%m-%d")
-            return date_str not in holidays
-    except (json.JSONDecodeError, IOError) as e:
-        logging.error(f"Error reading holidays file: {e}")
-        return True  # If we can't read the file, assume it's a working day
 
 
 file_name = "last_update_information.json"
@@ -97,7 +78,7 @@ def main():
     update_financial_institutions_holidays(token_id)
 
     # Check if today is a working day (skip if manual mode)
-    if not args.manual and not is_working_day(today):
+    if not args.manual and not check_working_day(today):
         logging.info("Today is a holiday or weekend. Skipping processing.")
         logging.info("Use -m or --manual flag to bypass this check.")
         exit()
@@ -146,6 +127,12 @@ def main():
             "Please wait at least 15 minutes before running again."
         )
         raise SystemExit(1)
+    except StartDateError as e:
+            logging.error(
+                f"Unable to fetch stock prices: {e} "
+                "Please correct the start and end dates, then try again."
+            )
+            raise SystemExit(1)
 
     # Update the last update time after successful processing (both sheets and local file)
     if not args.dry_run:

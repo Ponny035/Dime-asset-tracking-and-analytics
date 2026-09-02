@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 
 import src.module.stockInfo as stockInfo_module
+from src.exceptions import StockPriceFetchError
 from src.module.stockInfo import (
-    StockPriceFetchError,
     get_split_factor,
     get_splits_in_range,
     get_bulk_available_trading_day_closing_price,

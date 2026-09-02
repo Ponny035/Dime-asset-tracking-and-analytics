@@ -17,9 +17,7 @@ os.makedirs(_yf_cache_dir, exist_ok=True)
 yf.set_tz_cache_location(_yf_cache_dir)
 
 
-class StockPriceFetchError(Exception):
-    """Raised when stock price fetching fails after all retries are exhausted."""
-    pass
+
 
 
 # Session-level cache so each ticker's split history is fetched only once per run

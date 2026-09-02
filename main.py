@@ -25,7 +25,7 @@ last_performance_log_update_range = os.getenv("LAST_PERFORMANCE_LOG_UPDATE_RANGE
 auth_mode = os.getenv("AUTH_MODE", "oauth")
 
 
-file_name = "last_update_information.json"
+last_update_file_name = "last_update_information.json"
 user_timezone = "Asia/Bangkok"
 
 
@@ -51,14 +51,14 @@ def main():
         "-s",
         "--start-date",
         type=dt.date.fromisoformat,
-        help='Manual start date input in ISO format (YYYY-MM-DD)',
+        help='Manual start date input in ISO format (YYYY-MM-DD) eg. -s \'2026-09-01\'',
     )
 
     parser.add_argument(
         "-e",
         "--end-date",
         type=dt.date.fromisoformat,
-        help='Manual end date input in ISO format (YYYY-MM-DD)',
+        help='Manual end date input in ISO format (YYYY-MM-DD) eg. -e \'2026-09-01\'',
     )
     args = parser.parse_args()
 
@@ -66,10 +66,6 @@ def main():
         logging.info("Dry run mode")
         logging.info("Simulate execution without writing")
     
-    if args.end_date and not args.start_date:
-        parser.error("--end-date requires --start-date")
-
-    # exit()
     # Get today's date
     today = dt.datetime.now().date()
 
@@ -84,10 +80,10 @@ def main():
         exit()
 
     # Get the last update date from Google Sheets (source of truth) with local file fallback
-    last_update = get_last_update_date(spreadsheet_id, last_update_range, file_name, auth_mode)
-    # last_invest_log_update = get_last_update_date(spreadsheet_id, last_invest_log_update_range, file_name, auth_mode)
-    # last_asset_log_update = get_last_update_date(spreadsheet_id, last_asset_log_update_range, file_name, auth_mode)
-    # last_performance_log_update = get_last_update_date(spreadsheet_id, last_performance_log_update_range, file_name, auth_mode)
+    last_update = get_last_update_date(spreadsheet_id, last_update_range, last_update_file_name, auth_mode)
+    # last_invest_log_update = get_last_update_date(spreadsheet_id, last_invest_log_update_range, last_update_file_name, auth_mode)
+    # last_asset_log_update = get_last_update_date(spreadsheet_id, last_asset_log_update_range, last_update_file_name, auth_mode)
+    # last_performance_log_update = get_last_update_date(spreadsheet_id, last_performance_log_update_range, last_update_file_name, auth_mode)
 
     if last_update and not args.manual and last_update == today and not args.start_date:
         logging.info('"investment log" No update needed. Already updated today.')
@@ -99,8 +95,10 @@ def main():
             end_date = args.end_date
         elif args.start_date and not args.end_date:
             start_date = args.start_date
-            # if start_date > today return error
             end_date = today
+        elif not args.start_date and args.end_date:
+            start_date = last_update + dt.timedelta(days=1)
+            end_date = args.end_date
         else:
             start_date = last_update + dt.timedelta(days=1)
             end_date = today
@@ -111,12 +109,19 @@ def main():
         elif args.start_date and not args.end_date:
             start_date = args.start_date
             end_date = today
+        elif not args.start_date and args.end_date:
+            start_date = today
+            end_date = args.end_date
         else:
             start_date = today
             end_date = today
+    if start_date > end_date:
+        logging.error(
+            f"The start date ({start_date}) must be on or before the end date ({end_date}). Please check the dates and try again."
+        )
+        exit()
 
     logging.info(f"Processing from {start_date} to {end_date}")
-    # Call the functions with the specified dates
     try:
         process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode) 
         process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
@@ -137,7 +142,7 @@ def main():
     # Update the last update time after successful processing (both sheets and local file)
     if not args.dry_run:
         update_success = update_last_update_date(
-            spreadsheet_id, last_update_range, file_name, today, auth_mode
+            spreadsheet_id, last_update_range, last_update_file_name, end_date, auth_mode
         )
         if not update_success:
             logging.error(

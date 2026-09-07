@@ -63,7 +63,13 @@ def query_investment_log(
         mask = (investment_log[investment_log.columns[0]] >= start_datetime) & (
             investment_log[investment_log.columns[0]] <= end_datetime
         )
-        return investment_log.loc[mask]
+        filtered_log = investment_log.loc[mask]
+        if filtered_log.empty:
+            raise ValueError(
+                f"No investment log data found for range {start_date} to {end_date} "
+                f"in '{range_name}'."
+            )
+        return filtered_log
     except HttpError as err:
         print(err)
 

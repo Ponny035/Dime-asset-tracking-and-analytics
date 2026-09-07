@@ -21,6 +21,9 @@ def export_invest_log_to_google_sheet(
     Returns:
         dict: The result of the API call.
     """
+    if not transaction:
+        raise ValueError("No transaction data to export.")
+
     try:
         credentials = authenticate(auth_mode)
         service = build("sheets", "v4", credentials=credentials, cache_discovery=False)

@@ -1,16 +1,14 @@
 import os
 import logging
-import datetime as dt
 import argparse
+import datetime as dt
 from dotenv import load_dotenv
 
 from src.exceptions import StockPriceFetchError, StartDateError
-from src.pipeline.processTransaction import process_asset_tracking
-from src.pipeline.processTransaction import process_investment_transactions
 from src.util.check_validity import check_working_day, check_valid_date_range
 from src.module.checkThaiHoliday import update_financial_institutions_holidays
 from src.module.updateTracker import get_last_update_date, update_last_update_date
-from src.util.check_validity import check_working_day
+from src.pipeline.processTransaction import process_investment_transactions, process_asset_tracking
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

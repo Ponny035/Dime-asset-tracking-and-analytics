@@ -1,6 +1,3 @@
-from typing import Literal
-from datetime import datetime, timedelta
-from finvizfinance.quote import finvizfinance
 import yfinance as yf
 import pandas_market_calendars as mcal
 import pytz
@@ -9,6 +6,12 @@ import time
 import logging
 import os
 import tempfile
+
+from typing import Literal
+from datetime import datetime, timedelta
+from finvizfinance.quote import finvizfinance
+
+from src.exceptions import StockPriceFetchError
 
 # Give each process its own yfinance cache directory to avoid SQLite locking
 # when multiple downloads run in quick succession

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from src.exceptions import StockPriceFetchError, StartDateError
 from src.pipeline.processTransaction import process_asset_tracking
 from src.pipeline.processTransaction import process_investment_transactions
+from src.util.check_validity import check_working_day, check_valid_date_range
 from src.module.checkThaiHoliday import update_financial_institutions_holidays
 from src.module.updateTracker import get_last_update_date, update_last_update_date
 from src.util.check_validity import check_working_day
@@ -115,11 +116,15 @@ def main():
         else:
             start_date = today
             end_date = today
-    if start_date > end_date:
+
+    try:
+        check_valid_date_range(start_date, end_date)
+    except StartDateError as e:
         logging.error(
-            f"The start date ({start_date}) must be on or before the end date ({end_date}). Please check the dates and try again."
+            f"Unable to fetch stock prices: {e} "
+            "Please correct the start and end dates, then try again."
         )
-        exit()
+        raise SystemExit(1)    
 
     logging.info(f"Processing from {start_date} to {end_date}")
     try:

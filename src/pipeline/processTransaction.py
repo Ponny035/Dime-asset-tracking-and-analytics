@@ -4,6 +4,8 @@ from datetime import datetime, time
 import pytz
 from dotenv import load_dotenv
 
+from src.exceptions import StartDateError
+from src.util.check_validity import check_valid_date_range
 from src.module.PDFProcessing import process_pdf
 from src.module.assetTracking import query_investment_log, process_asset_log, process_asset_performance
 from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
@@ -25,6 +27,16 @@ def process_investment_transactions(is_dry_run,start_date, end_date, user_timezo
     Returns:
         None
     """
+
+    try:
+        check_valid_date_range(start_date, end_date)
+    except StartDateError as e:
+        logging.error(
+            f"Unable to fetch stock prices: {e} "
+            "Please correct the start and end dates, then try again."
+        )
+        raise StartDateError
+    
 
     # load the variables from .env
     load_dotenv()
@@ -146,6 +158,16 @@ def process_asset_tracking(is_dry_run, start_date, end_date, user_timezone, auth
     Returns:
         None
     """
+
+    try:
+        check_valid_date_range(start_date, end_date)
+    except StartDateError as e:
+        logging.error(
+            f"Unable to fetch stock prices: {e} "
+            "Please correct the start and end dates, then try again."
+        )
+        raise StartDateError
+
     # load the variables from .env
     load_dotenv()
     spreadsheet_id = os.getenv("SPREADSHEET_ID")

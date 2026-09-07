@@ -15,8 +15,9 @@ from src.module.stockInfo import (
 )
 from src.module.updateTracker import update_last_update_date
 from src.util.auth import authenticate
+from src.exceptions import StartDateError
 from src.util.sheets import sheets_execute
-
+from src.util.check_validity import check_valid_date_range
 
 def query_investment_log(
     spreadsheet_id: str,
@@ -123,9 +124,14 @@ def process_asset_log(
         }
     )
 
-    if start_date > end_date:
-        print("Start date must not be after end date.")
-        return None
+    try:
+        check_valid_date_range(start_date, end_date)
+    except StartDateError as e:
+        logging.error(
+            f"Unable to fetch stock prices: {e} "
+            "Please correct the start and end dates, then try again."
+        )
+        raise SystemExit(1)
 
     date_range = pd.date_range(start=start_date, end=end_date)
     asset_log = None

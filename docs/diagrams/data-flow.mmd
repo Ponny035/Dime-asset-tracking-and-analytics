@@ -1,0 +1,34 @@
+flowchart TD
+    Start(["main.py daily run"]) --> Holiday["Update Thai holiday calendar<br/>BOT API"]
+    Holiday --> WorkCheck{"Working day?"}
+    WorkCheck -->|"no"| Skip(["skip, exit"])
+    WorkCheck -->|"yes"| LastUpdate["Read last-update date<br/>Sheets, fallback local JSON"]
+    LastUpdate --> Range["Compute start / end date range"]
+
+    Range --> Mail["Connect Gmail via IMAP"]
+
+    subgraph ING["process_investment_transactions"]
+      direction TB
+      Mail --> Search["Search 'Confirmation Note' emails"]
+      Search --> PDF["Download + decrypt PDF attachments"]
+      PDF --> Parse["Parse BUY / SEL rows + option legs"]
+      Parse --> Enrich["Enrich sector / industry<br/>finviz -> yfinance fallback"]
+      Enrich --> AppendLog["Append rows to US Invest Log sheet"]
+    end
+
+    AppendLog --> Query["Query invest log for date range"]
+
+    subgraph VAL["process_asset_tracking - per date in range"]
+      direction TB
+      Query --> PrevDay["Load prior-day asset snapshot"]
+      PrevDay --> Splits{"Stock split since<br/>last snapshot?"}
+      Splits -->|"yes"| AuditRows["Inject SEL/BUY audit rows,<br/>write to invest log"]
+      Splits -->|"no"| Merge["Merge snapshot + today's trades"]
+      AuditRows --> Merge
+      Merge --> Price["Fetch closing prices<br/>yfinance + NYSE calendar"]
+      Price --> Value["Compute valuation + performance"]
+      Value --> Write["Append to Asset Tracking sheet"]
+      Write --> Checkpoint["Save last-update date<br/>Sheets + local JSON"]
+    end
+
+    Checkpoint --> Done(["run complete"])

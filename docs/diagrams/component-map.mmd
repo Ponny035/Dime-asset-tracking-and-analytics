@@ -1,0 +1,57 @@
+flowchart LR
+    subgraph Entry["entry point"]
+      Main["main.py"]
+    end
+
+    subgraph Orchestration["src/pipeline"]
+      PT["processTransaction.py"]
+    end
+
+    subgraph Modules["src/module"]
+      QER["queryEmailRecord.py"]
+      PDFP["PDFProcessing.py"]
+      SI["stockInfo.py"]
+      AT["assetTracking.py"]
+      EXP["exportDataToGoogleSheet.py"]
+      HOL["checkThaiHoliday.py"]
+      UT["updateTracker.py"]
+    end
+
+    subgraph Utils["src/util"]
+      AUTH["auth.py"]
+      SHEETS["sheets.py"]
+      CV["check_validity.py"]
+      CONV["converter.py"]
+    end
+
+    subgraph External["external services"]
+      GMAIL[("Gmail IMAP")]
+      GSHEETS[("Google Sheets API")]
+      YF[("yfinance / finviz")]
+      BOT[("BOT holiday API")]
+    end
+
+    Main --> PT
+    Main --> HOL
+    Main --> UT
+    Main --> CV
+
+    PT --> QER --> GMAIL
+    PT --> PDFP
+    PT --> SI --> YF
+    PT --> AT
+    PT --> EXP
+    PT --> CONV
+
+    AT --> SI
+    AT --> EXP
+    AT --> UT
+    AT --> AUTH
+    AT --> SHEETS
+
+    EXP --> SHEETS
+    EXP --> AUTH
+    SHEETS --> GSHEETS
+    HOL --> BOT
+    UT --> SHEETS
+    UT --> AUTH

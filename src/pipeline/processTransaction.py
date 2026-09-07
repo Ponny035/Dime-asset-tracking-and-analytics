@@ -1,6 +1,5 @@
 import os
 
-import pytz
 import logging
 from dotenv import load_dotenv
 from datetime import datetime, time
@@ -14,8 +13,7 @@ from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.queryEmailRecord import query_emails
 from src.module.stockInfo import format_stock_transaction, format_option_transaction
 
-
-def process_investment_transactions(is_dry_run,start_date, end_date, user_timezone="Asia/Bangkok", auth_mode="oauth"):
+def process_investment_transactions(is_dry_run, start_date, end_date, user_timezone="Asia/Bangkok", auth_mode="oauth"):
     """
     Process investment transactions by reading emails, extracting PDF attachments, parsing transaction details,
     and importing them into a Google Sheet.
@@ -51,20 +49,10 @@ def process_investment_transactions(is_dry_run,start_date, end_date, user_timezo
     from_email = "no-reply@dime.co.th"
     subject_keyword = "Confirmation Note"
 
-    temp_time = time(8, 30, 00)
+    bkk_start_date = convert_timezone_date(source_date = start_date, source_timezone = user_timezone)
+    bkk_end_date = convert_timezone_date(source_date = end_date, source_timezone = user_timezone)
+    
 
-    user_tz = pytz.timezone(user_timezone)
-    bkk_tz = pytz.timezone("Asia/Bangkok")
-    bkk_start_date = (
-        user_tz.localize(datetime.combine(start_date, temp_time))
-        .astimezone(bkk_tz)
-        .date()
-    )
-    bkk_end_date = (
-        user_tz.localize(datetime.combine(end_date, temp_time))
-        .astimezone(bkk_tz)
-        .date()
-    )
     logging.info("Bangkok Time Start Date : %s", bkk_start_date)
 
     # call the read_emails function with the start and end dates
@@ -175,20 +163,9 @@ def process_asset_tracking(is_dry_run, start_date, end_date, user_timezone, auth
     stock_range_name = os.getenv("US_STOCK_INVEST_LOG_RANGE_NAME")
     asset_track_stock_range_name = os.getenv("ASSET_TRACKING_STOCK_RANGE_NAME")
 
-    temp_time = time(8, 30, 00)
-
-    user_tz = pytz.timezone(user_timezone)
-    nyse_tz = pytz.timezone("America/New_York")
-    nyse_start_date = (
-        user_tz.localize(datetime.combine(start_date, temp_time))
-        .astimezone(nyse_tz)
-        .date()
-    )
-    nyse_end_date = (
-        user_tz.localize(datetime.combine(end_date, temp_time))
-        .astimezone(nyse_tz)
-        .date()
-    )
+    nyse_start_date = convert_timezone_date(start_date, user_timezone,"America/New_York")
+    nyse_end_date = convert_timezone_date(end_date, user_timezone,"America/New_York")
+    
     logging.info("New York Time Start Date : %s", nyse_start_date)
     logging.info("New York Time End Date: %s", nyse_end_date)
 

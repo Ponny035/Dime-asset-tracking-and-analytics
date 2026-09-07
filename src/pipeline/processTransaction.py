@@ -1,6 +1,7 @@
 import os
 
 import pytz
+import logging
 from dotenv import load_dotenv
 from datetime import datetime, time
 
@@ -64,14 +65,13 @@ def process_investment_transactions(is_dry_run,start_date, end_date, user_timezo
         .astimezone(bkk_tz)
         .date()
     )
-    print("Bangkok Time Start Date : ", bkk_start_date)
-    print("Bangkok Time End Date: ", bkk_end_date)
+    logging.info("Bangkok Time Start Date : %s", bkk_start_date)
 
     # call the read_emails function with the start and end dates
     pdf_path_list = query_emails(
         start_date, end_date, email_address, app_password, from_email, subject_keyword
     )
-    print(pdf_path_list)
+    logging.debug(pdf_path_list)
 
     date_and_transactions = []
     for pdf_path in pdf_path_list:
@@ -101,13 +101,13 @@ def process_investment_transactions(is_dry_run,start_date, end_date, user_timezo
                 "Done",
                 "-",
             )
-            print(formated_stock_transaction)
+            logging.debug(formated_stock_transaction)
             if not is_dry_run:
                 export_invest_log_to_google_sheet(
                     spreadsheet_id, stock_range_name, "USER_ENTERED", [formated_stock_transaction], auth_mode
                 )
             else:
-                print("update data to google sheet")
+                logging.warning("Failed to update last update date in Google Sheets due to dry run")
 
         for option_transactions in transactions[2]:
             transaction_type = option_transactions[0]
@@ -136,13 +136,13 @@ def process_investment_transactions(is_dry_run,start_date, end_date, user_timezo
                 "Done",
                 "-"
             )
-            print(formated_option_transaction)
+            logging.debug(formated_option_transaction)
             if not is_dry_run:
                 export_invest_log_to_google_sheet(
                     spreadsheet_id, option_range_name, "USER_ENTERED", [formated_option_transaction], auth_mode
                 )
             else:
-                print("update data to google sheet")
+                logging.info("update data to google sheet")
     return None
 
 
@@ -189,10 +189,10 @@ def process_asset_tracking(is_dry_run, start_date, end_date, user_timezone, auth
         .astimezone(nyse_tz)
         .date()
     )
-    print("New York Time Start Date : ", nyse_start_date)
-    print("New York Time End Date: ", nyse_end_date)
+    logging.info("New York Time Start Date : %s", nyse_start_date)
+    logging.info("New York Time End Date: %s", nyse_end_date)
 
-    print("get investment log")
+    logging.info("get investment log")
 
     investment_log = query_investment_log(
         spreadsheet_id=spreadsheet_id,
@@ -202,7 +202,7 @@ def process_asset_tracking(is_dry_run, start_date, end_date, user_timezone, auth
         auth_mode=auth_mode,
     )
 
-    print("process asset log")
+    logging.info("process asset log")
     
     # Get update tracker parameters
     last_update_range = os.getenv("LAST_UPDATE_RANGE_NAME")

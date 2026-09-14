@@ -65,10 +65,8 @@ def query_investment_log(
         )
         filtered_log = investment_log.loc[mask]
         if filtered_log.empty:
-            raise ValueError(
-                f"No investment log data found for range {start_date} to {end_date} "
-                f"in '{range_name}'."
-            )
+            logging.info(f"No investment log data found for range {start_date} to {end_date}.")
+
         return filtered_log
     except HttpError as err:
         print(err)

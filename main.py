@@ -4,7 +4,8 @@ import argparse
 import datetime as dt
 from dotenv import load_dotenv
 
-from src.exceptions import StockPriceFetchError, StartDateError
+from src.exceptions import StockPriceFetchError, StartDateError, TickerNotFoundError
+from src.module.stockInfo import recheck_delisted_tickers
 from src.util.check_validity import check_working_day, check_valid_date_range
 from src.module.checkThaiHoliday import update_financial_institutions_holidays
 from src.module.updateTracker import get_last_update_date, update_last_update_date
@@ -124,10 +125,20 @@ def main():
         )
         raise SystemExit(1)    
 
+    # Check once whether any stored delisted ticker is trading again
+    recheck_delisted_tickers()
+
     logging.info(f"Processing from {start_date} to {end_date}")
     try:
-        process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode) 
+        process_investment_transactions(args.dry_run, start_date, end_date, user_timezone, auth_mode)
         process_asset_tracking(args.dry_run, start_date, end_date, user_timezone, auth_mode)
+    except TickerNotFoundError as e:
+        logging.error(
+            f"No price history for '{e}'. "
+            "All changes have been rolled back. "
+            "Check the ticker symbol, or record the corporate action (e.g. acquisition) for it."
+        )
+        raise SystemExit(1)
     except StockPriceFetchError as e:
         logging.error(
             f"Failed to fetch stock price for '{e}' after all retries. "

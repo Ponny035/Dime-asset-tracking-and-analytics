@@ -191,6 +191,14 @@ def process_asset_log(
             final_df = filtered_investment_log
 
         if is_market_open:
+            # Last recorded close per ticker — fallback if Yahoo drops a ticker's whole history (e.g. acquired)
+            last_known_close = {}
+            if "Closing Stock Price" in asset_log.columns:
+                recorded = pd.to_numeric(
+                    asset_log["Closing Stock Price"].astype(str).str.replace(r"[$,]", "", regex=True),
+                    errors="coerce",
+                )
+                last_known_close = recorded.groupby(asset_log["Product Name"]).last().dropna().to_dict()
             asset_log = asset_log.drop(
                 columns=[
                     "Closing Stock Price",
@@ -351,7 +359,7 @@ def process_asset_log(
                 ].drop_duplicates(subset=["Port", "Product Name", "Sector", "Industry"])
 
             stock_triggers = final_df['Product Name'].values.tolist()
-            closing_prices = get_bulk_available_trading_day_closing_price(stock_triggers,start_date=nyse_temp_datetime,end_date=nyse_temp_datetime,user_timezone='America/New_York',fill='ffill')
+            closing_prices = get_bulk_available_trading_day_closing_price(stock_triggers,start_date=nyse_temp_datetime,end_date=nyse_temp_datetime,user_timezone='America/New_York',fill='ffill',last_known_close=last_known_close)
             if closing_prices is None:
                 logging.error(f"Failed to get closing prices for {process_date.date()}, skipping asset tracking for this date")
                 continue

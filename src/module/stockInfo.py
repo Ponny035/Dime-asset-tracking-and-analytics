@@ -10,8 +10,16 @@ import tempfile
 from typing import Literal
 from datetime import datetime, timedelta
 from finvizfinance.quote import finvizfinance
+from yfinance.exceptions import YFPricesMissingError, YFRateLimitError, YFTzMissingError
 
-from src.exceptions import StockPriceFetchError
+from src.exceptions import StockPriceFetchError, TickerNotFoundError
+from src.module.delistedTickers import (
+    STATUS_NEVER_RECHECK,
+    load_delisted,
+    mark_delisted,
+    mark_never_recheck,
+    unmark_delisted,
+)
 
 # Give each process its own yfinance cache directory to avoid SQLite locking
 # when multiple downloads run in quick succession
@@ -85,17 +93,64 @@ def get_split_factor(ticker: str, from_date, to_date) -> float:
     return float(relevant.prod())
 
 
-def get_stock_basic_info(stock_name: str = "AAPL") -> dict:
+CLASSIFICATION_KEYS = ("Sector", "Industry")
+
+
+def _is_missing(value) -> bool:
+    return value is None or str(value).strip() in ("", "-", "None", "nan")
+
+
+def get_known_classifications(investment_log: pd.DataFrame | None) -> dict:
+    """
+    Collect the latest non-missing Sector and Industry per ticker from earlier
+    invest-log rows, to fill in what finviz/yfinance can't find.
+
+    Args:
+        investment_log (pd.DataFrame | None): Invest log (first column is the date).
+
+    Returns:
+        dict: {ticker: {"Sector": ..., "Industry": ...}} — keys only present when known.
+    """
+    known = {}
+    if investment_log is None or investment_log.empty:
+        return known
+    for _, row in investment_log.sort_values(investment_log.columns[0]).iterrows():
+        entry = known.setdefault(row["Product Name"], {})
+        for key in CLASSIFICATION_KEYS:
+            if not _is_missing(row.get(key)):
+                entry[key] = str(row[key])
+    return known
+
+
+def get_stock_basic_info(stock_name: str = "AAPL", known_classifications: dict | None = None) -> dict:
     """
     Retrieves basic information about a stock.
     Tries finvizfinance first, falls back to yfinance if finviz scraping fails.
+    A Sector/Industry neither source has is taken from an earlier transaction of
+    the same ticker (known_classifications), otherwise set to "-".
 
     Args:
         stock_name (str): The name of the stock. Default is "AAPL" (Apple Inc.).
+        known_classifications (dict, optional): Output of get_known_classifications().
 
     Returns:
         dict: A dictionary containing the basic information of the stock.
     """
+    info = _fetch_stock_basic_info(stock_name)
+    known = (known_classifications or {}).get(stock_name, {})
+    for key in CLASSIFICATION_KEYS:
+        if not _is_missing(info[key]):
+            continue
+        if key in known:
+            logging.info(f"{stock_name}: {key} not found online, using '{known[key]}' from an earlier transaction")
+            info[key] = known[key]
+        else:
+            logging.warning(f"{stock_name}: {key} not found online or in earlier transactions, using '-'")
+            info[key] = "-"
+    return info
+
+
+def _fetch_stock_basic_info(stock_name: str) -> dict:
     try:
         stock = finvizfinance(stock_name)
         stock_fundament = stock.ticker_fundament()
@@ -134,6 +189,7 @@ def format_stock_transaction(
     transaction_type: Literal["BUY", "SEL", "DIV"] = "BUY",
     status: str = "Done",
     note: str = "-",
+    known_classifications: dict | None = None,
 ) -> list:
     """
     Formats a transaction into a list with detailed information.
@@ -150,11 +206,13 @@ def format_stock_transaction(
         transaction_type (Literal['BUY', 'SEL', 'DIV']): The type of the transaction. Default is 'BUY'.
         status (str): The status of the transaction. Default is "Done".
         note (str): The note of the transaction. Default is "-".
+        known_classifications (dict, optional): Sector/Industry from earlier transactions,
+            used when finviz/yfinance can't find them (see get_known_classifications).
 
     Returns:
         list: A list representing the formatted transaction with detailed information.
     """
-    stock_info = get_stock_basic_info(stock_name)
+    stock_info = get_stock_basic_info(stock_name, known_classifications)
     has_dividend = stock_info["Dividend"] != "-"
     if transaction_type != "SEL":
         total_amount = round(amount + (commission + tax), 2)
@@ -198,6 +256,7 @@ def format_option_transaction(
     portfolio: str = "Dime",
     status: str = "Done",
     note: str = "-",
+    known_classifications: dict | None = None,
 ) -> list:
     """
     Formats a transaction into a list with detailed information.
@@ -217,11 +276,13 @@ def format_option_transaction(
         portfolio (str): The name of the portfolio. Default is "Dime".
         status (str): The status of the transaction. Default is "Done".
         note (str): The note of the transaction. Default is "-".
+        known_classifications (dict, optional): Sector/Industry from earlier transactions,
+            used when finviz/yfinance can't find them (see get_known_classifications).
 
     Returns:
         list: A list representing the formatted transaction with detailed information.
     """
-    stock_info = get_stock_basic_info(stock_name)
+    stock_info = get_stock_basic_info(stock_name, known_classifications)
     if transaction_type != "SEL":
         total_amount = round(amount + (commission + tax), 2)
     else:
@@ -249,7 +310,6 @@ def format_option_transaction(
         note,
     ]
     return transaction
-
 
 
 def get_last_available_trading_day_closing_price(
@@ -334,12 +394,138 @@ def get_last_available_trading_day_closing_price(
         print(f"An error occurred while fetching the stock price: {e}")
         return None
 
+# Per-ticker fetch outcomes returned by _history()
+HISTORY_OK = "ok"
+HISTORY_TRANSIENT = "transient"      # rate limited / network error — worth retrying
+HISTORY_MISSING = "missing"          # "possibly delisted; no price data found"
+HISTORY_NO_SYMBOL = "no_symbol"      # Yahoo has no metadata for the symbol at all
+
+MAX_RETRIES = 3
+RETRY_SLEEP_SECONDS = 0.15
+RATE_LIMIT_BACKOFF_SECONDS = 5
+DELISTED_LOOKBACK_DAYS = 365
+# A ticker must have missed at least this many NYSE sessions to count as delisted,
+# so a close Yahoo simply hasn't published yet is not mistaken for a delisting
+DELISTED_MIN_MISSED_SESSIONS = 2
+
+
+def _extract_close(raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
+    """
+    Return raw['Close'] as a DataFrame with one column per ticker and a tz-naive index.
+    Handles both flat columns (Close is a Series) and yfinance 1.x MultiIndex columns
+    (Close is a DataFrame, even for a single ticker).
+    """
+    close = raw['Close']
+    if isinstance(close, pd.Series):
+        close = close.to_frame(tickers[0])
+    elif len(tickers) == 1:
+        close = close.rename(columns={close.columns[0]: tickers[0]})
+    else:
+        close = close.copy()
+    if close.index.tz is not None:
+        close.index = close.index.tz_localize(None)
+    return close
+
+
+def _history(ticker: str, start: str, end: str) -> tuple[str, pd.Series, str]:
+    """
+    Fetch one ticker's closing prices with Ticker.history, which (unlike yf.download)
+    raises typed errors so a rate limit can be told apart from a delisting.
+
+    Returns:
+        (status, closes, reason): status is one of the HISTORY_* constants, closes is a
+        non-NaN Series with a tz-naive index (empty unless status is HISTORY_OK).
+    """
+    empty = pd.Series(dtype=float)
+    previous = yf.config.debug.hide_exceptions
+    yf.config.debug.hide_exceptions = False
+    try:
+        raw = yf.Ticker(ticker).history(start=start, end=end, auto_adjust=False)
+    except YFRateLimitError as e:
+        return HISTORY_TRANSIENT, empty, str(e)
+    except YFTzMissingError as e:
+        return HISTORY_NO_SYMBOL, empty, str(e)
+    except YFPricesMissingError as e:
+        return HISTORY_MISSING, empty, str(e)
+    except Exception as e:
+        # Network errors and anything unexpected are treated as transient
+        return HISTORY_TRANSIENT, empty, repr(e)
+    finally:
+        yf.config.debug.hide_exceptions = previous
+
+    if raw is None or raw.empty or 'Close' not in raw.columns:
+        return HISTORY_MISSING, empty, "no price data returned"
+    closes = _extract_close(raw, [ticker])[ticker].dropna()
+    # Yahoo can return its last bar even when it falls outside [start, end) — drop those rows
+    closes = closes[(closes.index >= pd.Timestamp(start)) & (closes.index < pd.Timestamp(end))]
+    if closes.empty:
+        return HISTORY_MISSING, empty, f"no price data between {start} and {end}"
+    return HISTORY_OK, closes, ""
+
+
+def _confirm_delisted(
+    ticker: str,
+    start_date: datetime,
+    yf_start: str,
+    yf_end: str,
+    trading_days: pd.DatetimeIndex,
+    last_known_close: dict[str, float],
+) -> tuple[pd.Timestamp, float]:
+    """
+    Called after Yahoo reported no prices for *ticker* in the requested window.
+    Looks back DELISTED_LOOKBACK_DAYS to decide whether the ticker stopped trading.
+
+    Yahoo sometimes removes the whole history of an acquired ticker. In that case the
+    caller's last recorded close (e.g. from the asset tracking sheet) is used instead.
+
+    Returns:
+        (last_trade_date, last_close) when the ticker is confirmed delisted.
+
+    Raises:
+        TickerNotFoundError: Yahoo has no price history at all and there is no recorded close.
+        StockPriceFetchError: the check was inconclusive (rate limited, or the last
+            price is too recent to rule out Yahoo simply being late).
+    """
+    lookback_start = (start_date.date() - timedelta(days=DELISTED_LOOKBACK_DAYS)).strftime('%Y-%m-%d')
+    status, closes, reason = _history(ticker, lookback_start, yf_end)
+    if status in (HISTORY_NO_SYMBOL, HISTORY_MISSING):
+        if ticker in last_known_close:
+            # Yahoo dropped the ticker entirely; the last trade was before this window
+            days_before = trading_days[trading_days < pd.Timestamp(start_date.date())]
+            last_trade_date = days_before[-1] if len(days_before) else pd.Timestamp(start_date.date()) - timedelta(days=1)
+            logging.warning(
+                f"{ticker}: Yahoo has no price history at all any more ({reason}); "
+                f"using last recorded close {float(last_known_close[ticker]):.2f}"
+            )
+            return last_trade_date, float(last_known_close[ticker])
+        logging.error(f"{ticker}: no price history in the last {DELISTED_LOOKBACK_DAYS} days ({reason})")
+        raise TickerNotFoundError(ticker)
+    if status == HISTORY_TRANSIENT:
+        logging.warning(f"{ticker}: could not confirm delisting — {reason}")
+        raise StockPriceFetchError(ticker)
+
+    last_trade_date = closes.index[-1]
+    if last_trade_date >= pd.Timestamp(yf_start):
+        # Yahoo does have prices in the window after all, so the earlier miss was transient
+        raise StockPriceFetchError(ticker)
+
+    missed_sessions = trading_days[trading_days > last_trade_date]
+    if len(missed_sessions) < DELISTED_MIN_MISSED_SESSIONS:
+        logging.warning(
+            f"{ticker}: no price since {last_trade_date.date()}, but only {len(missed_sessions)} "
+            "NYSE session(s) missed — Yahoo may just be late, not treating it as delisted"
+        )
+        raise StockPriceFetchError(ticker)
+    return last_trade_date, float(closes.iloc[-1])
+
+
 def get_bulk_available_trading_day_closing_price(
-    ticker: list[str], 
-    start_date: datetime, 
+    ticker: list[str],
+    start_date: datetime,
     end_date: datetime,
-    user_timezone: str = 'Asia/Bangkok', 
-    fill: Literal['ffill', 'bfill', 'zero', 'nan'] | None = None
+    user_timezone: str = 'Asia/Bangkok',
+    fill: Literal['ffill', 'bfill', 'zero', 'nan'] | None = None,
+    last_known_close: dict[str, float] | None = None,
 ) -> pd.DataFrame | None:
     """
     Fetch closing prices for multiple stock tickers within a given date range,
@@ -353,13 +539,20 @@ def get_bulk_available_trading_day_closing_price(
         fill: Fill strategy for non-trading days:
             • None: Return only trading days (default)
             • 'ffill': Forward-fill last known price
-            • 'bfill': Back-fill next known price  
+            • 'bfill': Back-fill next known price
             • 'zero': Fill missing days with 0
             • 'nan': Insert missing days as NaN
+        last_known_close (dict[str, float], optional): Last recorded close per ticker
+            (e.g. from the asset tracking sheet). Used when Yahoo has dropped a ticker's
+            whole history, so an acquired holding is not mistaken for an unknown symbol.
 
     Returns:
         pd.DataFrame | None: DataFrame with dates as index and tickers as columns,
                             containing closing prices. Returns None if no data available.
+
+    Raises:
+        StockPriceFetchError: A ticker could not be fetched after retries (e.g. rate limited).
+        TickerNotFoundError: Yahoo has no price history at all for a ticker.
 
     Notes:
         - Converts dates from user's timezone to NYSE timezone for trading day calculations.
@@ -367,20 +560,25 @@ def get_bulk_available_trading_day_closing_price(
         - If fill is specified, adds non-trading days and applies the chosen fill strategy.
         - For 'ffill', automatically fetches data from the last trading day before start_date
           to ensure no NaN values at the beginning.
+        - Delisted / acquired tickers: when Yahoo has no prices in the window but the ticker
+          traded before and has missed at least DELISTED_MIN_MISSED_SESSIONS NYSE sessions,
+          it is recorded in delisted_tickers.json and its last real close is returned for
+          every row. Tickers already in that file are not fetched for windows after their
+          last trade date (see recheck_delisted_tickers for how they come back).
         - Returns None if no trading days are found or data is unavailable.
 
     Example:
         # Get raw trading day data only
         data = get_bulk_available_trading_day_closing_price(
-            ['AAPL', 'MSFT'], 
-            datetime(2025, 6, 16), 
+            ['AAPL', 'MSFT'],
+            datetime(2025, 6, 16),
             datetime(2025, 6, 23)
         )
-        
+
         # Get data with weekends forward-filled
         data_filled = get_bulk_available_trading_day_closing_price(
-            ['AAPL', 'MSFT'], 
-            datetime(2025, 6, 16), 
+            ['AAPL', 'MSFT'],
+            datetime(2025, 6, 16),
             datetime(2025, 6, 23),
             fill='ffill'
         )
@@ -390,31 +588,29 @@ def get_bulk_available_trading_day_closing_price(
     nyse_tz = pytz.timezone('America/New_York')
 
     # Convert end_date to NYSE timezone
-    end_date_nyse = user_tz.localize(end_date).astimezone(nyse_tz)
+    if end_date.tzinfo is None:
+        end_date_nyse = user_tz.localize(end_date).astimezone(nyse_tz)
+    else:
+        end_date_nyse = end_date.astimezone(nyse_tz)
 
-    # Find all valid trading days up to the adjusted end date
+    # Trading days from 30 days before start_date (ffill lookback) up to the adjusted end date
     trading_days = nyse.valid_days(
-        start_date='2000-01-01',
+        start_date=(start_date.date() - timedelta(days=30)).strftime('%Y-%m-%d'),
         end_date=end_date_nyse.strftime('%Y-%m-%d'),
         tz='America/New_York'
     )
     if len(trading_days) == 0:
         return None
+    trading_days = trading_days.tz_localize(None).normalize()
+    start_ts = pd.Timestamp(start_date.date())
+    end_ts = pd.Timestamp(end_date.date())
 
     try:
         # Determine fetch start based on fill strategy
         if fill == 'ffill':
             # Find last trading day before start_date using NYSE calendar
-            # Look back up to 30 days to handle long weekends/holidays
-            lookback_start = (start_date.date() - timedelta(days=30)).strftime('%Y-%m-%d')
-            lookback_end = (start_date.date() - timedelta(days=1)).strftime('%Y-%m-%d')
-            
-            trading_days_before = nyse.valid_days(
-                start_date=lookback_start,
-                end_date=lookback_end,
-                tz='America/New_York'
-            )
-            
+            trading_days_before = trading_days[trading_days < start_ts]
+
             if len(trading_days_before) > 0:
                 # Fetch from the last trading day before start_date
                 last_trading_day = trading_days_before[-1].date()
@@ -424,57 +620,71 @@ def get_bulk_available_trading_day_closing_price(
                 yf_start = start_date.strftime('%Y-%m-%d')
         else:
             yf_start = start_date.strftime('%Y-%m-%d')
-        
+
         # yfinance end date is exclusive, so add one day
         yf_end = (end_date.date() + timedelta(days=1)).strftime('%Y-%m-%d')
-        
+
+        # Tickers already known to be delisted before this window use their last close, no fetch
+        known_delisted = load_delisted()
+        delisted = {
+            t: float(known_delisted[t]['last_close'])
+            for t in ticker
+            if t in known_delisted and pd.Timestamp(known_delisted[t]['last_trade_date']) < start_ts
+        }
+        live = [t for t in ticker if t not in delisted]
+
         # Bulk download — threads=False prevents SQLite lock contention in yfinance cache
-        max_retries = 3
-        try:
-            data = yf.download(ticker, start=yf_start, end=yf_end, progress=False, auto_adjust=False, threads=False)
-        except Exception as e:
-            logging.error(f"Bulk download failed: {e}")
-            data = pd.DataFrame()
+        data = pd.DataFrame()
+        if live:
+            try:
+                data = yf.download(live, start=yf_start, end=yf_end, progress=False, auto_adjust=False, threads=False)
+            except Exception as e:
+                logging.error(f"Bulk download failed: {e}")
 
-        if not data.empty:
-            close_data = data['Close'].to_frame(ticker[0]) if len(ticker) == 1 else data['Close'].copy()
-        else:
-            close_data = pd.DataFrame()
-
-        # Normalise index timezone — yfinance can return tz-aware index
-        if not close_data.empty and close_data.index.tz is not None:
-            close_data.index = close_data.index.tz_localize(None)
+        close_data = _extract_close(data, live) if not data.empty else pd.DataFrame()
 
         # Retry only tickers that came back missing/all-NaN individually
-        missing = [t for t in ticker if t not in close_data.columns or close_data[t].isna().all()]
+        missing = [t for t in live if t not in close_data.columns or close_data[t].isna().all()]
         if missing:
             logging.warning(f"Bulk download missing {missing}, retrying individually...")
             for t in missing:
-                for attempt in range(max_retries):
-                    time.sleep(0.15)
-                    try:
-                        raw = yf.download([t], start=yf_start, end=yf_end, progress=False, auto_adjust=False, threads=False)
-                        if not raw.empty:
-                            col = raw['Close']
-                            if isinstance(col, pd.Series):
-                                col = col.rename(t).to_frame()
-                            else:
-                                col = col.rename(columns={col.columns[0]: t})
-                            if col.index.tz is not None:
-                                col.index = col.index.tz_localize(None)
-                            # Drop the all-NaN placeholder column before assigning
-                            if t in close_data.columns:
-                                close_data = close_data.drop(columns=[t])
-                            close_data = pd.concat([close_data, col[[t]]], axis=1)
-                            break
-                        logging.warning(f"{t}: empty on attempt {attempt + 1}/{max_retries}")
-                    except Exception as e:
-                        logging.warning(f"{t}: attempt {attempt + 1}/{max_retries} failed — {e}")
+                for attempt in range(MAX_RETRIES):
+                    time.sleep(RETRY_SLEEP_SECONDS)
+                    status, closes, reason = _history(t, yf_start, yf_end)
+                    if status == HISTORY_OK:
+                        # Drop the all-NaN placeholder column before assigning
+                        if t in close_data.columns:
+                            close_data = close_data.drop(columns=[t])
+                        close_data = pd.concat([close_data, closes.rename(t).to_frame()], axis=1)
+                        break
+                    if status in (HISTORY_MISSING, HISTORY_NO_SYMBOL):
+                        last_trade_date, last_close = _confirm_delisted(
+                            t, start_date, yf_start, yf_end, trading_days, last_known_close or {}
+                        )
+                        logging.warning(
+                            f"{t}: no price data since {last_trade_date.date()} — likely delisted/acquired. "
+                            f"Using last close {last_close:.2f}. Record the corporate action to stop tracking it."
+                        )
+                        mark_delisted(t, last_trade_date, last_close, reason)
+                        delisted[t] = last_close
+                        break
+                    logging.warning(f"{t}: attempt {attempt + 1}/{MAX_RETRIES} failed — {reason}")
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1))
                 else:
                     raise StockPriceFetchError(t)
 
         if close_data.empty:
-            return None
+            if not delisted:
+                return None
+            # Only delisted tickers: build the rows their last close is attached to
+            if fill is None:
+                index = trading_days[(trading_days >= start_ts) & (trading_days <= end_ts)]
+            else:
+                index = pd.date_range(start=start_ts, end=end_ts, freq='D')
+            if len(index) == 0:
+                return None
+            close_data = pd.DataFrame(index=index)
 
         if fill is not None:
             # Create complete date range INCLUDING any historical data we fetched
@@ -513,6 +723,10 @@ def get_bulk_available_trading_day_closing_price(
             )
             close_data = close_data.loc[requested_range]
 
+        # Delisted tickers keep their last real close on every row
+        for t, last_close in delisted.items():
+            close_data[t] = last_close
+
         result = close_data.round(2)
 
         # Validate that all requested tickers have data for the requested range
@@ -533,6 +747,77 @@ def get_bulk_available_trading_day_closing_price(
         logging.error(f"get_bulk_available_trading_day_closing_price failed: {e}", exc_info=True)
 
     return None
+
+
+def _company_name(ticker: str) -> str:
+    try:
+        info = yf.Ticker(ticker).info or {}
+        return str(info.get("longName") or info.get("shortName") or "unknown")
+    except Exception:
+        return "unknown"
+
+
+def recheck_delisted_tickers(ask=input) -> None:
+    """
+    Run once at startup. For each ticker in delisted_tickers.json (except those marked
+    never_recheck), check whether Yahoo has prices after its last trade date. If it does,
+    show the evidence and ask the user whether it is the same stock:
+        • yes → remove it from the file so it goes back to the normal price flow
+        • no  → mark it never_recheck (the symbol was reused by another company)
+    Any other answer, or no terminal to answer from, leaves it as is and asks again next run.
+
+    Args:
+        ask: Function used to prompt the user (default: input). Injectable for tests.
+    """
+    known = load_delisted()
+    for t, info in known.items():
+        if info.get("status") == STATUS_NEVER_RECHECK:
+            continue
+
+        last_trade_date = pd.Timestamp(info["last_trade_date"])
+        last_close = float(info["last_close"])
+        status, closes, reason = _history(
+            t,
+            (last_trade_date + timedelta(days=1)).strftime('%Y-%m-%d'),
+            (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d'),
+        )
+        if status == HISTORY_TRANSIENT:
+            logging.warning(f"{t}: could not re-check delisted status ({reason}), will try again next run")
+            continue
+        if status != HISTORY_OK:
+            logging.info(f"{t}: still no price data since {last_trade_date.date()}, keeping it as delisted")
+            continue
+
+        first_new_date = closes.index[0]
+        new_close = float(closes.iloc[0])
+        gap_sessions = len(mcal.get_calendar('NYSE').valid_days(
+            start_date=(last_trade_date + timedelta(days=1)).strftime('%Y-%m-%d'),
+            end_date=first_new_date.strftime('%Y-%m-%d'),
+        )) - 1
+        change = (new_close - last_close) / last_close * 100 if last_close else float('nan')
+        prompt = (
+            f"\n{t} was marked delisted (last close {last_close:.2f} on {last_trade_date.date()}), "
+            f"but Yahoo has prices again from {first_new_date.date()}.\n"
+            f"  new close: {new_close:.2f} ({change:+.1f}% vs last close), "
+            f"gap: {gap_sessions} trading day(s), Yahoo name now: {_company_name(t)}\n"
+            f"  If this is NOT the stock you hold (symbol reused by another company), answer n.\n"
+            f"Bring {t} back to normal price tracking? [y/n]: "
+        )
+        logging.warning(f"{t}: has prices again from {first_new_date.date()}, asking user to confirm")
+        try:
+            answer = ask(prompt).strip().lower()
+        except EOFError:
+            logging.warning(f"{t}: no terminal to confirm relisting, will ask again next run")
+            continue
+
+        if answer in ("y", "yes"):
+            unmark_delisted(t)
+            logging.info(f"{t}: removed from delisted list, back to normal price tracking")
+        elif answer in ("n", "no"):
+            mark_never_recheck(t)
+            logging.info(f"{t}: kept at last close {last_close:.2f}, will not be re-checked again")
+        else:
+            logging.warning(f"{t}: no clear answer, will ask again next run")
 
 def check_valid_trading_date(
     target_date: datetime, user_timezone: str = "Asia/Bangkok"

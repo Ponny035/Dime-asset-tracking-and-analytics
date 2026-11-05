@@ -11,7 +11,7 @@ from src.module.PDFProcessing import process_pdf
 from src.module.assetTracking import query_investment_log, process_asset_log, process_asset_performance
 from src.module.exportDataToGoogleSheet import export_invest_log_to_google_sheet
 from src.module.queryEmailRecord import query_emails
-from src.module.stockInfo import format_stock_transaction, format_option_transaction
+from src.module.stockInfo import format_stock_transaction, format_option_transaction, get_known_classifications
 
 def process_investment_transactions(is_dry_run, start_date, end_date, user_timezone="Asia/Bangkok", auth_mode="oauth"):
     """
@@ -66,6 +66,15 @@ def process_investment_transactions(is_dry_run, start_date, end_date, user_timez
         date, transactions, option_transactions = process_pdf(pdf_path, pdf_password)
         date_and_transactions.append([date, transactions, option_transactions])
 
+    # Sector / Industry from earlier transactions, used when finviz can't find them
+    known_classifications = {}
+    if date_and_transactions:
+        known_classifications = get_known_classifications(
+            query_investment_log(
+                spreadsheet_id, stock_range_name, datetime(1900, 1, 1).date(), end_date, auth_mode
+            )
+        )
+
     for transactions in date_and_transactions:
         date = transactions[0].strftime("%Y-%m-%d")
         for transaction in transactions[1]:
@@ -88,6 +97,7 @@ def process_investment_transactions(is_dry_run, start_date, end_date, user_timez
                 transaction_type,
                 "Done",
                 "-",
+                known_classifications,
             )
             logging.debug(formated_stock_transaction)
             if not is_dry_run:
@@ -122,7 +132,8 @@ def process_investment_transactions(is_dry_run, start_date, end_date, user_timez
                 stock_name,
                 "Dime",
                 "Done",
-                "-"
+                "-",
+                known_classifications,
             )
             logging.debug(formated_option_transaction)
             if not is_dry_run:

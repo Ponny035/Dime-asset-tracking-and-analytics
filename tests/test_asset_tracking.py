@@ -154,6 +154,18 @@ class TestProcessAssetLogSplitDetection(unittest.TestCase):
     @patch("src.module.assetTracking.get_splits_in_range")
     @patch("src.module.assetTracking.check_valid_trading_date")
     @patch("src.module.assetTracking.query_investment_log")
+    def test_passes_recorded_closing_prices_as_fallback(
+        self, mock_query, mock_trading, mock_splits, mock_prices, mock_export
+    ):
+        """The asset sheet's last Closing Stock Price is the fallback when Yahoo drops a ticker."""
+        self._run(_make_investment_log(), (mock_query, mock_trading, mock_splits, mock_prices, mock_export))
+        self.assertEqual(mock_prices.call_args.kwargs["last_known_close"], {"AAPL": 190.0})
+
+    @patch("src.module.assetTracking.export_invest_log_to_google_sheet")
+    @patch("src.module.assetTracking.get_bulk_available_trading_day_closing_price")
+    @patch("src.module.assetTracking.get_splits_in_range")
+    @patch("src.module.assetTracking.check_valid_trading_date")
+    @patch("src.module.assetTracking.query_investment_log")
     def test_split_rows_have_stock_split_note(
         self, mock_query, mock_trading, mock_splits, mock_prices, mock_export
     ):

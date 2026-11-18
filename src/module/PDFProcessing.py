@@ -145,6 +145,74 @@ def process_us_transactions_pdf (pdf_file_path: str, password: str):
         # Return the date and transactions as a tuple
         return date, transactions, option_transactions
 
+def process_th_transactions_pdf (pdf_file_path: str, password: str):
+    # Open the locked PDF file with the given password
+    with open(pdf_file_path, "rb") as pdf_file:
+        # Create a PDF reader object
+        pdf_reader = pypdf.PdfReader(pdf_file, password=password)
+
+        # Create an empty list to store the transactions
+        transactions = []
+        option_transactions = []
+        date = None
+
+        # Iterate over each page in the PDF file
+        for page in pdf_reader.pages:
+            # Extract the text from the page
+            page_text = page.extract_text()
+            
+
+            # Split the text into lines
+            lines = page_text.split("\n")
+
+            # Get the date from the 15th line
+            if date is None:
+                date_str = lines[20][0:10]
+                date = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
+            # Create a set of stock exchanges
+            transaction_type_enum = {"BUY", "SEL", "REW"}
+
+
+            # Loop over each line in the page
+            for line_num, line in enumerate(lines):
+                is_stock = False
+                # Check if the line contains a stock exchange
+                for type_enum in transaction_type_enum:
+                    if type_enum in line and (len(line)>3):
+                        is_stock = True
+                        # Extract transaction details from the order detail lines
+                        transaction_type = type_enum
+                        
+
+                        order_detail = lines[line_num]
+                        order_detail = order_detail.split(" ")
+                        stock_name = order_detail[2]
+                        share = float(order_detail[3])
+                        price_info_str = order_detail[5].strip()[:-10]
+                        dot_pos = price_info_str.find(".")
+                        split_pos = dot_pos + 3  # "." + 2 decimal digits
+                        amount = float(price_info_str[:split_pos].replace(",", ""))
+                        price = float(price_info_str[split_pos:].replace(",", ""))
+                        commission= float(order_detail[4])
+
+                        # Get the withholding tax from the next line
+                        pdf_withholding_tax = float(order_detail[7])
+            
+                        # Add the transaction to the list of transactions
+                        transactions.append(
+                            [
+                                transaction_type,
+                                stock_name,
+                                share,
+                                price,
+                                commission,
+                                pdf_withholding_tax,
+                                amount,
+                            ]
+                        )
+        # Return the date and transactions as a tuple
+        return date, transactions, option_transactions
+
 def process_pdf(pdf_file_path: str, password: str) -> tuple:
     """
     Process a PDF file containing stock transaction information.
@@ -161,13 +229,16 @@ def process_pdf(pdf_file_path: str, password: str) -> tuple:
     date = None
     transactions = None
     option_transactions = None
+    th_date = None
+    th_transactions = None
+    th_option_transactions = None
 
     if "_TH_" in pdf_file_path:
-        # is_th_transaction_file = True
-        print("hello :",pdf_file_path)
+        is_th_transaction_file = True
+        th_date, th_transactions, th_option_transactions = process_th_transactions_pdf(pdf_file_path, password)
 
     if not is_th_transaction_file:
         date, transactions, option_transactions = process_us_transactions_pdf(pdf_file_path, password)
     
-    return date, transactions, option_transactions
+    return date, transactions, option_transactions, th_date, th_transactions, th_option_transactions
     

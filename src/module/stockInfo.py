@@ -177,6 +177,43 @@ def _fetch_stock_basic_info(stock_name: str) -> dict:
     }
 
 
+def get_th_stock_basic_info(stock_name: str = "SCB") -> dict:
+    """
+    Retrieves basic information about a stock.
+    Tries finvizfinance first, falls back to yfinance if finviz scraping fails.
+
+    Args:
+        stock_name (str): The name of the stock. Default is "AAPL" (Apple Inc.).
+
+    Returns:
+        dict: A dictionary containing the basic information of the stock.
+    """
+    try:
+        stock = finvizfinance(stock_name)
+        stock_fundament = stock.ticker_fundament()
+        return {
+            "Company": str(stock_fundament["Company"]),
+            "Sector": str(stock_fundament["Sector"]),
+            "Industry": str(stock_fundament["Industry"]),
+            "Country": str(stock_fundament["Country"]),
+            "Dividend": str(stock_fundament.get("Dividend TTM", "-")),
+        }
+    except Exception as finviz_err:
+        logging.warning(f"finvizfinance failed for {stock_name} ({finviz_err}), falling back to yfinance")
+
+    info = yf.Ticker(stock_name).info
+    if not info or info.get("quoteType") is None:
+        raise RuntimeError(f"Both finvizfinance and yfinance failed to fetch info for {stock_name}")
+    dividend = info.get("trailingAnnualDividendRate") or info.get("dividendRate")
+    return {
+        "Company": str(info.get("longName") or info.get("shortName") or stock_name),
+        "Sector": str(info.get("sector") or "-"),
+        "Industry": str(info.get("industry") or "-"),
+        "Country": str(info.get("country") or "-"),
+        "Dividend": str(dividend) if dividend else "-",
+    }
+
+
 def format_stock_transaction(
     price: float,
     commission: float,
@@ -306,6 +343,67 @@ def format_option_transaction(
         tax,
         amount,
         total_amount,
+        status,
+        note,
+    ]
+    return transaction
+
+
+def format_th_stock_transaction(
+    price: float,
+    commission: float,
+    tax: float,
+    amount: float,
+    share: float,
+    stock_name: str = "AAPL",
+    date: datetime = datetime.today(),
+    portfolio: str = "Dime",
+    transaction_type: Literal["BUY", "SEL", "DIV"] = "BUY",
+    status: str = "Done",
+    note: str = "-",
+) -> list:
+    """
+    Formats a transaction into a list with detailed information.
+
+    Args:
+        price (float): The price of the transaction.
+        commission (float): The commission for the transaction.
+        tax (float): The tax for the transaction.
+        amount (float): The total amount of the transaction.
+        share (float): The number of shares involved in the transaction.
+        stock_name (str): The name of the stock. Default is "SCB".
+        date (datetime): The date of the transaction. Default is the current date and time.
+        portfolio (str): The name of the portfolio. Default is "Dime".
+        transaction_type (Literal['BUY', 'SEL', 'DIV']): The type of the transaction. Default is 'BUY'.
+        status (str): The status of the transaction. Default is "Done".
+        note (str): The note of the transaction. Default is "-".
+
+    Returns:
+        list: A list representing the formatted transaction with detailed information.
+    """
+    stock_info = get_stock_basic_info(stock_name)
+    has_dividend = stock_info["Dividend"] != "-"
+    if transaction_type != "SEL":
+        total_amount = round(amount + (commission + tax), 2)
+    else:
+        total_amount = round(amount - (commission + tax), 2) * -1
+        amount = -amount
+        share = -share
+
+    transaction = [
+        date,
+        portfolio,
+        transaction_type,
+        stock_name,
+        stock_info["Sector"],
+        stock_info["Industry"],
+        has_dividend,
+        price,
+        commission,
+        tax,
+        amount,
+        total_amount,
+        share,
         status,
         note,
     ]

@@ -50,7 +50,6 @@ def process_investment_transactions(is_dry_run, start_date, end_date, user_timez
     subject_keyword = "Confirmation Note"
 
     bkk_start_date = convert_timezone_date(source_date = start_date, source_timezone = user_timezone)
-    bkk_end_date = convert_timezone_date(source_date = end_date, source_timezone = user_timezone)
     
 
     logging.info("Bangkok Time Start Date : %s", bkk_start_date)
@@ -61,21 +60,24 @@ def process_investment_transactions(is_dry_run, start_date, end_date, user_timez
     )
     logging.debug(pdf_path_list)
 
-    date_and_transactions = []
+    us_date_and_transactions = []
+    th_date_and_transactions = []
     for pdf_path in pdf_path_list:
-        date, transactions, option_transactions = process_pdf(pdf_path, pdf_password)
-        date_and_transactions.append([date, transactions, option_transactions])
+        date, transactions, option_transactions, th_date, th_transactions, th_option_transactions = process_pdf(pdf_path, pdf_password)
+        us_date_and_transactions.append([date, transactions, option_transactions])
+        th_date_and_transactions.append([th_date, th_transactions, th_option_transactions])
 
     # Sector / Industry from earlier transactions, used when finviz can't find them
     known_classifications = {}
-    if date_and_transactions:
+    if us_date_and_transactions:
         known_classifications = get_known_classifications(
             query_investment_log(
                 spreadsheet_id, stock_range_name, datetime(1900, 1, 1).date(), end_date, auth_mode
             )
         )
 
-    for transactions in date_and_transactions:
+    # us transaction
+    for transactions in us_date_and_transactions:
         date = transactions[0].strftime("%Y-%m-%d")
         for transaction in transactions[1]:
             transaction_type = transaction[0]
@@ -142,6 +144,40 @@ def process_investment_transactions(is_dry_run, start_date, end_date, user_timez
                 )
             else:
                 logging.info("update data to google sheet")
+
+    
+    # # th transaction 
+    # for transactions in th_date_and_transactions:
+    #         date = transactions[0].strftime("%Y-%m-%d")
+    #         for transaction in transactions[1]:
+    #             transaction_type = transaction[0]
+    #             stock_name = transaction[1]
+    #             share = transaction[2]
+    #             price = transaction[3]
+    #             commission = transaction[4]
+    #             tax = transaction[5]
+    #             amount = transaction[6]
+    #             formated_stock_transaction = format_stock_transaction(
+    #                 price,
+    #                 commission,
+    #                 tax,
+    #                 amount,
+    #                 float(share),
+    #                 stock_name,
+    #                 date,
+    #                 "Dime",
+    #                 transaction_type,
+    #                 "Done",
+    #                 "-",
+    #             )
+    #             logging.debug(formated_stock_transaction)
+    #             if not is_dry_run:
+    #                 export_invest_log_to_google_sheet(
+    #                     spreadsheet_id, stock_range_name, "USER_ENTERED", [formated_stock_transaction], auth_mode
+    #                 )
+    #             else:
+    #                 logging.warning("Failed to update last update date in Google Sheets due to dry run")
+        
     return None
 
 
